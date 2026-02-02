@@ -22,4 +22,10 @@ public class ItemsController : ControllerBase
         var results = await _catalogService.SearchAsync(query ?? string.Empty, cancellationToken);
         return Ok(results);
     }
+
+    [HttpGet("status")]
+    public ActionResult<ItemCatalogService.CatalogStatus> GetStatus()
+    {
+        return Ok(_catalogService.GetStatus());
+    }
 }

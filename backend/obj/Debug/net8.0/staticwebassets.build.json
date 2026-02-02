@@ -1,0 +1,11 @@
+{
+  "Version": 1,
+  "Hash": "3UBnDyhF6tdnT4ZJ8ZIowcL0dJkkxaQXMowVAvpd550=",
+  "Source": "OSRSGeMonitor.Api",
+  "BasePath": "_content/OSRSGeMonitor.Api",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": []
+}

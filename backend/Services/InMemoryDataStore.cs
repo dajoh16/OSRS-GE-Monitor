@@ -11,11 +11,15 @@ public class InMemoryDataStore
     private readonly List<Position> _positions = new();
     private readonly List<Alert> _alerts = new();
     private readonly List<Notification> _notifications = new();
-    private readonly SqlitePriceHistoryStore _priceHistoryStore;
+    private readonly SqliteWatchlistStore _watchlistStore;
 
-    public InMemoryDataStore(SqlitePriceHistoryStore priceHistoryStore)
+    public InMemoryDataStore(SqliteWatchlistStore watchlistStore)
     {
-        _priceHistoryStore = priceHistoryStore;
+        _watchlistStore = watchlistStore;
+        foreach (var item in _watchlistStore.GetItems())
+        {
+            _items[item.Id] = item;
+        }
     }
 
     public GlobalConfig Config { get; } = new();
@@ -25,6 +29,11 @@ public class InMemoryDataStore
         if (request.StandardDeviationThreshold.HasValue)
         {
             Config.StandardDeviationThreshold = request.StandardDeviationThreshold.Value;
+        }
+
+        if (request.ProfitTargetPercent.HasValue)
+        {
+            Config.ProfitTargetPercent = Math.Max(0, request.ProfitTargetPercent.Value);
         }
 
         if (request.RecoveryStandardDeviationThreshold.HasValue)
@@ -42,26 +51,47 @@ public class InMemoryDataStore
             Config.FetchIntervalSeconds = Math.Max(5, request.FetchIntervalSeconds.Value);
         }
 
+        if (!string.IsNullOrWhiteSpace(request.UserAgent))
+        {
+            Config.UserAgent = request.UserAgent.Trim();
+        }
+
         return Config;
     }
 
     public IReadOnlyCollection<MonitoredItem> GetItems() => _items.Values.OrderBy(item => item.Id).ToArray();
 
+    public MonitoredItem? GetItem(int id)
+    {
+        return _items.TryGetValue(id, out var item) ? item : null;
+    }
+
     public MonitoredItem AddItem(CreateMonitoredItemRequest request)
     {
+        if (_items.TryGetValue(request.Id, out var existing))
+        {
+            return existing;
+        }
+
         var item = new MonitoredItem
         {
             Id = request.Id,
-            Name = request.Name
+            Name = request.Name,
+            AddedAt = DateTimeOffset.UtcNow
         };
 
         _items[item.Id] = item;
+        _watchlistStore.UpsertItem(item);
         return item;
     }
 
     public bool RemoveItem(int id)
     {
         var removed = _items.TryRemove(id, out _);
+        if (removed)
+        {
+            _watchlistStore.RemoveItem(id);
+        }
         return removed;
     }
 
@@ -70,6 +100,14 @@ public class InMemoryDataStore
         lock (_lock)
         {
             return _positions.OrderByDescending(position => position.BoughtAt).ToArray();
+        }
+    }
+
+    public Position? GetPosition(Guid id)
+    {
+        lock (_lock)
+        {
+            return _positions.FirstOrDefault(entry => entry.Id == id);
         }
     }
 
@@ -103,6 +141,21 @@ public class InMemoryDataStore
             }
 
             position.AcknowledgedAt = DateTimeOffset.UtcNow;
+            return true;
+        }
+    }
+
+    public bool RemovePosition(Guid id)
+    {
+        lock (_lock)
+        {
+            var index = _positions.FindIndex(entry => entry.Id == id);
+            if (index < 0)
+            {
+                return false;
+            }
+
+            _positions.RemoveAt(index);
             return true;
         }
     }
@@ -153,6 +206,21 @@ public class InMemoryDataStore
             }
 
             alert.AcknowledgedAt = DateTimeOffset.UtcNow;
+            return true;
+        }
+    }
+
+    public bool RemoveAlert(Guid id)
+    {
+        lock (_lock)
+        {
+            var index = _alerts.FindIndex(entry => entry.Id == id);
+            if (index < 0)
+            {
+                return false;
+            }
+
+            _alerts.RemoveAt(index);
             return true;
         }
     }
@@ -217,32 +285,34 @@ public class InMemoryDataStore
         }
     }
 
-    public void AddPricePoint(int itemId, PricePoint point)
-    {
-        _priceHistoryStore.AddPricePoint(itemId, point);
-    }
-
-    public (double Mean, double StandardDeviation, int SampleSize) GetRollingStats(int itemId)
-    {
-        var max = Math.Max(Config.RollingWindowSize, 1);
-        var snapshot = _priceHistoryStore.GetRecentPricePoints(itemId, max);
-        if (snapshot.Count == 0)
-        {
-            return (0, 0, 0);
-        }
-
-        var prices = snapshot.Select(point => point.Price).ToArray();
-        var mean = prices.Average();
-        var variance = prices.Sum(price => Math.Pow(price - mean, 2)) / prices.Length;
-        var stdDev = Math.Sqrt(variance);
-        return (mean, stdDev, prices.Length);
-    }
-
     public IReadOnlyCollection<Notification> GetNotifications()
     {
         lock (_lock)
         {
             return _notifications.OrderByDescending(notification => notification.CreatedAt).ToArray();
+        }
+    }
+
+    public bool RemoveNotification(Guid id)
+    {
+        lock (_lock)
+        {
+            var index = _notifications.FindIndex(notification => notification.Id == id);
+            if (index < 0)
+            {
+                return false;
+            }
+
+            _notifications.RemoveAt(index);
+            return true;
+        }
+    }
+
+    public void ClearNotifications()
+    {
+        lock (_lock)
+        {
+            _notifications.Clear();
         }
     }
 }

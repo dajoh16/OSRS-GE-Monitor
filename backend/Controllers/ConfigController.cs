@@ -25,6 +25,11 @@ public class ConfigController : ControllerBase
     [HttpPut]
     public ActionResult<GlobalConfig> UpdateConfig(UpdateConfigRequest request)
     {
+        if (request.UserAgent is not null && string.IsNullOrWhiteSpace(request.UserAgent))
+        {
+            return BadRequest("User-Agent is required.");
+        }
+
         var updated = _dataStore.UpdateConfig(request);
         return Ok(updated);
     }

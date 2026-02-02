@@ -20,4 +20,17 @@ public class NotificationsController : ControllerBase
     {
         return Ok(_dataStore.GetNotifications());
     }
+
+    [HttpDelete]
+    public IActionResult ClearNotifications()
+    {
+        _dataStore.ClearNotifications();
+        return NoContent();
+    }
+
+    [HttpDelete("{id:guid}")]
+    public IActionResult RemoveNotification(Guid id)
+    {
+        return _dataStore.RemoveNotification(id) ? NoContent() : NotFound();
+    }
 }

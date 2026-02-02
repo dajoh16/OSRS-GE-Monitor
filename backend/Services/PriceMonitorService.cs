@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Text.Json;
 using OSRSGeMonitor.Api.Models;
 
@@ -7,17 +6,21 @@ namespace OSRSGeMonitor.Api.Services;
 public class PriceMonitorService : BackgroundService
 {
     private const string ApiUrl = "https://prices.runescape.wiki/api/v1/osrs/latest";
+    private const TimeSeriesTimestep StatsTimestep = TimeSeriesTimestep.FiveMinutes;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly InMemoryDataStore _dataStore;
+    private readonly OsrsTimeSeriesService _timeSeriesService;
     private readonly ILogger<PriceMonitorService> _logger;
 
     public PriceMonitorService(
         IHttpClientFactory httpClientFactory,
         InMemoryDataStore dataStore,
+        OsrsTimeSeriesService timeSeriesService,
         ILogger<PriceMonitorService> logger)
     {
         _httpClientFactory = httpClientFactory;
         _dataStore = dataStore;
+        _timeSeriesService = timeSeriesService;
         _logger = logger;
     }
 
@@ -55,13 +58,16 @@ public class PriceMonitorService : BackgroundService
         }
 
         var client = _httpClientFactory.CreateClient();
-        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("OSRS-GE-Monitor", "1.0"));
+        ApplyUserAgent(client, _dataStore.Config.UserAgent);
 
         using var response = await client.GetAsync(ApiUrl, stoppingToken);
         response.EnsureSuccessStatusCode();
 
         await using var stream = await response.Content.ReadAsStreamAsync(stoppingToken);
-        var payload = await JsonSerializer.DeserializeAsync<PriceApiResponse>(stream, cancellationToken: stoppingToken);
+        var payload = await JsonSerializer.DeserializeAsync<PriceApiResponse>(
+            stream,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true },
+            stoppingToken);
         if (payload?.Data is null)
         {
             return;
@@ -80,15 +86,25 @@ public class PriceMonitorService : BackgroundService
                 continue;
             }
 
-            _dataStore.AddPricePoint(item.Id, new PricePoint(DateTimeOffset.UtcNow, price.Value));
-            var (mean, stdDev, sampleSize) = _dataStore.GetRollingStats(item.Id);
+            var (mean, stdDev, sampleSize) = await _timeSeriesService.GetRollingStatsAsync(
+                item.Id,
+                StatsTimestep,
+                _dataStore.Config.RollingWindowSize,
+                stoppingToken);
             if (sampleSize < 2 || stdDev <= 0)
             {
                 continue;
             }
 
             var dropThreshold = mean - (_dataStore.Config.StandardDeviationThreshold * stdDev);
-            if (price.Value < dropThreshold && !_dataStore.HasActiveAlert(item.Id))
+            const double geTaxRate = 0.02;
+            var requiredDropPercent = geTaxRate + Math.Max(0, _dataStore.Config.ProfitTargetPercent);
+            var dropAmount = mean - price.Value;
+            var dropPercent = mean > 0 ? dropAmount / mean : 0;
+            var minDrop = mean < 100 ? mean * requiredDropPercent : Math.Max(10, mean * requiredDropPercent);
+            var meetsMinDrop = dropAmount >= minDrop && dropPercent >= requiredDropPercent;
+
+            if (price.Value < dropThreshold && meetsMinDrop && !_dataStore.HasActiveAlert(item.Id))
             {
                 _dataStore.AddAlert(new Alert
                 {
@@ -127,6 +143,26 @@ public class PriceMonitorService : BackgroundService
             }
 
             return High ?? Low;
+        }
+    }
+
+    private static void ApplyUserAgent(HttpClient client, string userAgent)
+    {
+        if (string.IsNullOrWhiteSpace(userAgent))
+        {
+            return;
+        }
+
+        client.DefaultRequestHeaders.UserAgent.Clear();
+        client.DefaultRequestHeaders.Remove("User-Agent");
+
+        try
+        {
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(userAgent);
+        }
+        catch (FormatException)
+        {
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", userAgent);
         }
     }
 }

@@ -40,6 +40,12 @@ public class AlertsController : ControllerBase
         return _dataStore.AcknowledgeAlert(id, request.Quantity, out _) ? NoContent() : NotFound();
     }
 
+    [HttpDelete("{id:guid}")]
+    public IActionResult RemoveAlert(Guid id)
+    {
+        return _dataStore.RemoveAlert(id) ? NoContent() : NotFound();
+    }
+
     public sealed class AcknowledgeAlertRequest
     {
         public int Quantity { get; set; }

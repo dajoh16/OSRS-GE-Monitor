@@ -23,6 +23,13 @@ public class WatchlistController : ControllerBase
         return Ok(_dataStore.GetItems());
     }
 
+    [HttpGet("{id:int}")]
+    public ActionResult<MonitoredItem> GetWatchlistItem(int id)
+    {
+        var item = _dataStore.GetItem(id);
+        return item is null ? NotFound() : Ok(item);
+    }
+
     [HttpPost]
     public async Task<ActionResult<MonitoredItem>> AddItem(AddToWatchlistRequest request, CancellationToken cancellationToken)
     {
@@ -38,7 +45,58 @@ public class WatchlistController : ControllerBase
             Name = item.Name
         });
 
-        return CreatedAtAction(nameof(GetWatchlist), new { id = monitored.Id }, monitored);
+        return CreatedAtAction(nameof(GetWatchlistItem), new { id = monitored.Id }, monitored);
+    }
+
+    [HttpPost("bulk")]
+    public async Task<ActionResult<BulkAddWatchlistResponse>> AddItemsBulk(
+        BulkAddWatchlistRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.Names is null || request.Names.Count == 0)
+        {
+            return BadRequest("At least one item name is required.");
+        }
+
+        var added = new List<MonitoredItem>();
+        var notFound = new List<string>();
+        var duplicates = new List<string>();
+        var matched = new List<BulkMatchResult>();
+        var existingIds = _dataStore.GetItems().Select(item => item.Id).ToHashSet();
+
+        foreach (var name in request.Names.Where(entry => !string.IsNullOrWhiteSpace(entry)))
+        {
+            var trimmed = name.Trim();
+            if (trimmed.Length == 0)
+            {
+                continue;
+            }
+
+            var catalogItem = await _catalogService.FindByNameFuzzyAsync(trimmed, cancellationToken);
+            if (catalogItem is null)
+            {
+                notFound.Add(trimmed);
+                continue;
+            }
+
+            if (existingIds.Contains(catalogItem.Id))
+            {
+                duplicates.Add(trimmed);
+                continue;
+            }
+
+            var monitored = _dataStore.AddItem(new Models.Requests.CreateMonitoredItemRequest
+            {
+                Id = catalogItem.Id,
+                Name = catalogItem.Name
+            });
+            existingIds.Add(monitored.Id);
+            added.Add(monitored);
+            matched.Add(new BulkMatchResult(trimmed, catalogItem.Name, catalogItem.Id));
+        }
+
+        var response = new BulkAddWatchlistResponse(added, notFound, duplicates, matched);
+        return Ok(response);
     }
 
     [HttpDelete("{id:int}")]
@@ -51,4 +109,17 @@ public class WatchlistController : ControllerBase
     {
         public int ItemId { get; set; }
     }
+
+    public sealed class BulkAddWatchlistRequest
+    {
+        public List<string> Names { get; set; } = new();
+    }
+
+    public sealed record BulkMatchResult(string InputName, string MatchedName, int ItemId);
+
+    public sealed record BulkAddWatchlistResponse(
+        IReadOnlyCollection<MonitoredItem> Added,
+        IReadOnlyCollection<string> NotFound,
+        IReadOnlyCollection<string> Duplicates,
+        IReadOnlyCollection<BulkMatchResult> Matched);
 }

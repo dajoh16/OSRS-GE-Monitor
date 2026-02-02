@@ -14,7 +14,7 @@ public class Notification
         {
             Type = "drop",
             Title = $"{alert.ItemName} dropped",
-            Message = $"Triggered at {alert.TriggerPrice:N0} gp (mean {alert.Mean:N0}, σ {alert.StandardDeviation:N2}).",
+            Message = $"Triggered at {alert.TriggerPrice:N0} gp (mean {alert.Mean:N0}, sigma {alert.StandardDeviation:N2}).",
             CreatedAt = alert.TriggeredAt
         };
     }
