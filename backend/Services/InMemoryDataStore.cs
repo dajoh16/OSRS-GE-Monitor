@@ -8,9 +8,15 @@ public class InMemoryDataStore
 {
     private readonly object _lock = new();
     private readonly ConcurrentDictionary<int, MonitoredItem> _items = new();
-    private readonly ConcurrentDictionary<int, List<PricePoint>> _priceHistory = new();
     private readonly List<Position> _positions = new();
     private readonly List<Alert> _alerts = new();
+    private readonly List<Notification> _notifications = new();
+    private readonly SqlitePriceHistoryStore _priceHistoryStore;
+
+    public InMemoryDataStore(SqlitePriceHistoryStore priceHistoryStore)
+    {
+        _priceHistoryStore = priceHistoryStore;
+    }
 
     public GlobalConfig Config { get; } = new();
 
@@ -50,14 +56,12 @@ public class InMemoryDataStore
         };
 
         _items[item.Id] = item;
-        _priceHistory.TryAdd(item.Id, new List<PricePoint>());
         return item;
     }
 
     public bool RemoveItem(int id)
     {
         var removed = _items.TryRemove(id, out _);
-        _priceHistory.TryRemove(id, out _);
         return removed;
     }
 
@@ -132,6 +136,7 @@ public class InMemoryDataStore
         lock (_lock)
         {
             _alerts.Add(alert);
+            _notifications.Add(Notification.ForDrop(alert));
         }
 
         return alert;
@@ -152,6 +157,35 @@ public class InMemoryDataStore
         }
     }
 
+    public bool AcknowledgeAlert(Guid id, int quantity, out Position? position)
+    {
+        position = null;
+        lock (_lock)
+        {
+            var alert = _alerts.FirstOrDefault(entry => entry.Id == id);
+            if (alert is null)
+            {
+                return false;
+            }
+
+            if (alert.AcknowledgedAt is null)
+            {
+                alert.AcknowledgedAt = DateTimeOffset.UtcNow;
+            }
+
+            position = new Position
+            {
+                ItemId = alert.ItemId,
+                ItemName = alert.ItemName,
+                Quantity = quantity,
+                BuyPrice = alert.TriggerPrice,
+                BoughtAt = DateTimeOffset.UtcNow
+            };
+            _positions.Add(position);
+            return true;
+        }
+    }
+
     public bool TryRecoverAlert(int itemId, double recoveredPrice)
     {
         lock (_lock)
@@ -164,6 +198,13 @@ public class InMemoryDataStore
 
             alert.RecoveredAt = DateTimeOffset.UtcNow;
             alert.RecoveredPrice = recoveredPrice;
+            _notifications.Add(Notification.ForRecovery(alert));
+
+            foreach (var position in _positions.Where(entry => entry.ItemId == itemId && entry.RecoveredAt is null))
+            {
+                position.RecoveredAt = alert.RecoveredAt;
+                position.RecoveryPrice = recoveredPrice;
+            }
             return true;
         }
     }
@@ -178,31 +219,13 @@ public class InMemoryDataStore
 
     public void AddPricePoint(int itemId, PricePoint point)
     {
-        var history = _priceHistory.GetOrAdd(itemId, _ => new List<PricePoint>());
-        lock (_lock)
-        {
-            history.Add(point);
-            var max = Math.Max(Config.RollingWindowSize, 1);
-            if (history.Count > max)
-            {
-                history.RemoveRange(0, history.Count - max);
-            }
-        }
+        _priceHistoryStore.AddPricePoint(itemId, point);
     }
 
     public (double Mean, double StandardDeviation, int SampleSize) GetRollingStats(int itemId)
     {
-        if (!_priceHistory.TryGetValue(itemId, out var history))
-        {
-            return (0, 0, 0);
-        }
-
-        List<PricePoint> snapshot;
-        lock (_lock)
-        {
-            snapshot = history.ToList();
-        }
-
+        var max = Math.Max(Config.RollingWindowSize, 1);
+        var snapshot = _priceHistoryStore.GetRecentPricePoints(itemId, max);
         if (snapshot.Count == 0)
         {
             return (0, 0, 0);
@@ -213,5 +236,13 @@ public class InMemoryDataStore
         var variance = prices.Sum(price => Math.Pow(price - mean, 2)) / prices.Length;
         var stdDev = Math.Sqrt(variance);
         return (mean, stdDev, prices.Length);
+    }
+
+    public IReadOnlyCollection<Notification> GetNotifications()
+    {
+        lock (_lock)
+        {
+            return _notifications.OrderByDescending(notification => notification.CreatedAt).ToArray();
+        }
     }
 }

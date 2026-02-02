@@ -9,4 +9,6 @@ public class Position
     public double BuyPrice { get; set; }
     public DateTimeOffset BoughtAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? AcknowledgedAt { get; set; }
+    public DateTimeOffset? RecoveredAt { get; set; }
+    public double? RecoveryPrice { get; set; }
 }

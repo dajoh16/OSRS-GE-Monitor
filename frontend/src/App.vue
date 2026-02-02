@@ -25,8 +25,35 @@
             step="0.1"
           />
         </label>
+        <label class="field">
+          Recovery threshold
+          <input
+            v-model.number="recoveryThreshold"
+            type="number"
+            min="0"
+            step="0.1"
+          />
+        </label>
+        <label class="field">
+          Rolling window size
+          <input
+            v-model.number="rollingWindowSize"
+            type="number"
+            min="5"
+            step="1"
+          />
+        </label>
+        <label class="field">
+          Fetch interval (seconds)
+          <input
+            v-model.number="fetchInterval"
+            type="number"
+            min="10"
+            step="5"
+          />
+        </label>
         <button class="primary" :disabled="configLoading" @click="saveConfig">
-          {{ configLoading ? 'Saving...' : 'Save Threshold' }}
+          {{ configLoading ? 'Saving...' : 'Save Config' }}
         </button>
       </div>
     </section>
@@ -184,6 +211,9 @@ import {
 } from './api';
 
 const threshold = ref(0);
+const recoveryThreshold = ref(0);
+const rollingWindowSize = ref(30);
+const fetchInterval = ref(60);
 const configLoading = ref(false);
 const configError = ref('');
 const searchQuery = ref('');
@@ -206,6 +236,9 @@ const loadConfig = async () => {
   try {
     const data = await getConfig();
     threshold.value = data.standardDeviationThreshold ?? 0;
+    recoveryThreshold.value = data.recoveryStandardDeviationThreshold ?? 0;
+    rollingWindowSize.value = data.rollingWindowSize ?? 30;
+    fetchInterval.value = data.fetchIntervalSeconds ?? 60;
   } catch (error) {
     configError.value = error.message;
   }
@@ -215,7 +248,12 @@ const saveConfig = async () => {
   configLoading.value = true;
   configError.value = '';
   try {
-    await updateConfig({ standardDeviationThreshold: threshold.value });
+    await updateConfig({
+      standardDeviationThreshold: threshold.value,
+      recoveryStandardDeviationThreshold: recoveryThreshold.value,
+      rollingWindowSize: rollingWindowSize.value,
+      fetchIntervalSeconds: fetchInterval.value
+    });
     updateTimestamp();
   } catch (error) {
     configError.value = error.message;
@@ -255,7 +293,19 @@ const removeFromWatchlist = async (itemId) => {
 };
 
 const loadAlerts = async () => {
-  alerts.value = await getAlerts();
+  const data = await getAlerts();
+  alerts.value = data.map((alert) => {
+    const currentPrice = alert.currentPrice ?? alert.triggerPrice ?? 0;
+    const dropPercent =
+      alert.mean && currentPrice
+        ? (((alert.mean - currentPrice) / alert.mean) * 100).toFixed(1)
+        : '0.0';
+    return {
+      ...alert,
+      currentPrice,
+      dropPercent
+    };
+  });
 };
 
 const acknowledge = async (alert) => {
@@ -265,7 +315,16 @@ const acknowledge = async (alert) => {
 };
 
 const loadPositions = async () => {
-  positions.value = await getPositions();
+  const data = await getPositions();
+  positions.value = data.map((position) => {
+    const isRecovered = Boolean(position.recoveredAt || position.recoveryPrice);
+    return {
+      ...position,
+      recoveryPrice: position.recoveryPrice ?? '—',
+      status: isRecovered ? 'recovered' : 'open',
+      statusLabel: isRecovered ? 'Recovered' : 'Open'
+    };
+  });
 };
 
 const loadNotifications = async () => {

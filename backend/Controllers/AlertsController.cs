@@ -18,7 +18,8 @@ public class AlertsController : ControllerBase
     [HttpGet]
     public ActionResult<IReadOnlyCollection<Alert>> GetAlerts([FromQuery] string? status)
     {
-        return Ok(_dataStore.GetAlerts(status));
+        var filter = string.IsNullOrWhiteSpace(status) ? "active" : status;
+        return Ok(_dataStore.GetAlerts(filter));
     }
 
     [HttpGet("{id:guid}")]
@@ -29,8 +30,18 @@ public class AlertsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/acknowledge")]
-    public IActionResult Acknowledge(Guid id)
+    public IActionResult Acknowledge(Guid id, AcknowledgeAlertRequest request)
     {
-        return _dataStore.AcknowledgeAlert(id) ? NoContent() : NotFound();
+        if (request.Quantity <= 0)
+        {
+            return BadRequest("Quantity must be greater than zero.");
+        }
+
+        return _dataStore.AcknowledgeAlert(id, request.Quantity, out _) ? NoContent() : NotFound();
+    }
+
+    public sealed class AcknowledgeAlertRequest
+    {
+        public int Quantity { get; set; }
     }
 }

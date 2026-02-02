@@ -1,6 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using OSRSGeMonitor.Api.Models;
-using OSRSGeMonitor.Api.Models.Requests;
 using OSRSGeMonitor.Api.Services;
 
 namespace OSRSGeMonitor.Api.Controllers;
@@ -9,29 +7,19 @@ namespace OSRSGeMonitor.Api.Controllers;
 [Route("api/items")]
 public class ItemsController : ControllerBase
 {
-    private readonly InMemoryDataStore _dataStore;
+    private readonly ItemCatalogService _catalogService;
 
-    public ItemsController(InMemoryDataStore dataStore)
+    public ItemsController(ItemCatalogService catalogService)
     {
-        _dataStore = dataStore;
+        _catalogService = catalogService;
     }
 
     [HttpGet]
-    public ActionResult<IReadOnlyCollection<MonitoredItem>> GetItems()
+    public async Task<ActionResult<IReadOnlyCollection<ItemCatalogService.ItemCatalogEntry>>> SearchItems(
+        [FromQuery] string? query,
+        CancellationToken cancellationToken)
     {
-        return Ok(_dataStore.GetItems());
-    }
-
-    [HttpPost]
-    public ActionResult<MonitoredItem> AddItem(CreateMonitoredItemRequest request)
-    {
-        var item = _dataStore.AddItem(request);
-        return CreatedAtAction(nameof(GetItems), new { id = item.Id }, item);
-    }
-
-    [HttpDelete("{id:int}")]
-    public IActionResult RemoveItem(int id)
-    {
-        return _dataStore.RemoveItem(id) ? NoContent() : NotFound();
+        var results = await _catalogService.SearchAsync(query ?? string.Empty, cancellationToken);
+        return Ok(results);
     }
 }
