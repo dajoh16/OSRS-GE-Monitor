@@ -12,11 +12,22 @@ npm install
 npm run dev
 ```
 
+```powershell
+Set-Location frontend
+npm install
+npm run dev
+```
+
 The app runs on `http://localhost:5173` by default. To point at a backend running elsewhere,
 set `VITE_API_BASE_URL` in your environment.
 
 ```bash
 VITE_API_BASE_URL=http://localhost:8080 npm run dev
+```
+
+```powershell
+$env:VITE_API_BASE_URL = "http://localhost:8080"
+npm run dev
 ```
 
 ## Production build
@@ -26,11 +37,21 @@ npm run build
 npm run preview
 ```
 
+```powershell
+npm run build
+npm run preview
+```
+
 ## Docker
 
 Build the image and run the dev server in a container:
 
 ```bash
+docker build -t osrs-ge-monitor-frontend .
+docker run --rm -p 5173:5173 -e VITE_API_BASE_URL=http://host.docker.internal:8080 osrs-ge-monitor-frontend
+```
+
+```powershell
 docker build -t osrs-ge-monitor-frontend .
 docker run --rm -p 5173:5173 -e VITE_API_BASE_URL=http://host.docker.internal:8080 osrs-ge-monitor-frontend
 ```
