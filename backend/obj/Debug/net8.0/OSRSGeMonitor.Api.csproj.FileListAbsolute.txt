@@ -48,3 +48,8 @@ C:\dev\Freetime\OSRS-GE-Monitor\backend\obj\Debug\net8.0\refint\OSRSGeMonitor.Ap
 C:\dev\Freetime\OSRS-GE-Monitor\backend\obj\Debug\net8.0\OSRSGeMonitor.Api.pdb
 C:\dev\Freetime\OSRS-GE-Monitor\backend\obj\Debug\net8.0\OSRSGeMonitor.Api.genruntimeconfig.cache
 C:\dev\Freetime\OSRS-GE-Monitor\backend\obj\Debug\net8.0\ref\OSRSGeMonitor.Api.dll
+C:\dev\Freetime\OSRS-GE-Monitor\backend\bin\Debug\net8.0\Microsoft.OpenApi.dll
+C:\dev\Freetime\OSRS-GE-Monitor\backend\bin\Debug\net8.0\Swashbuckle.AspNetCore.Swagger.dll
+C:\dev\Freetime\OSRS-GE-Monitor\backend\bin\Debug\net8.0\Swashbuckle.AspNetCore.SwaggerGen.dll
+C:\dev\Freetime\OSRS-GE-Monitor\backend\bin\Debug\net8.0\Swashbuckle.AspNetCore.SwaggerUI.dll
+C:\dev\Freetime\OSRS-GE-Monitor\backend\obj\Debug\net8.0\OSRSGeMonitor.Api.MvcApplicationPartsAssemblyInfo.cs

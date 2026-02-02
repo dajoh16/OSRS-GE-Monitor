@@ -12,10 +12,17 @@ public class InMemoryDataStore
     private readonly List<Alert> _alerts = new();
     private readonly List<Notification> _notifications = new();
     private readonly SqliteWatchlistStore _watchlistStore;
+    private readonly SqliteConfigStore _configStore;
+    private readonly DiscordNotificationService _discordNotificationService;
 
-    public InMemoryDataStore(SqliteWatchlistStore watchlistStore)
+    public InMemoryDataStore(
+        SqliteWatchlistStore watchlistStore,
+        SqliteConfigStore configStore,
+        DiscordNotificationService discordNotificationService)
     {
         _watchlistStore = watchlistStore;
+        _configStore = configStore;
+        _discordNotificationService = discordNotificationService;
         foreach (var item in _watchlistStore.GetItems())
         {
             _items[item.Id] = item;
@@ -24,7 +31,25 @@ public class InMemoryDataStore
 
     public GlobalConfig Config { get; } = new();
 
-    public GlobalConfig UpdateConfig(UpdateConfigRequest request)
+    public async Task LoadConfigAsync(CancellationToken cancellationToken = default)
+    {
+        var persisted = await _configStore.LoadAsync(cancellationToken);
+        if (persisted is null)
+        {
+            return;
+        }
+
+        Config.StandardDeviationThreshold = persisted.StandardDeviationThreshold;
+        Config.ProfitTargetPercent = persisted.ProfitTargetPercent;
+        Config.RecoveryStandardDeviationThreshold = persisted.RecoveryStandardDeviationThreshold;
+        Config.RollingWindowSize = persisted.RollingWindowSize;
+        Config.FetchIntervalSeconds = persisted.FetchIntervalSeconds;
+        Config.UserAgent = persisted.UserAgent;
+        Config.DiscordNotificationsEnabled = persisted.DiscordNotificationsEnabled;
+        Config.DiscordWebhookUrl = persisted.DiscordWebhookUrl;
+    }
+
+    public async Task<GlobalConfig> UpdateConfigAsync(UpdateConfigRequest request, CancellationToken cancellationToken = default)
     {
         if (request.StandardDeviationThreshold.HasValue)
         {
@@ -56,6 +81,17 @@ public class InMemoryDataStore
             Config.UserAgent = request.UserAgent.Trim();
         }
 
+        if (request.DiscordNotificationsEnabled.HasValue)
+        {
+            Config.DiscordNotificationsEnabled = request.DiscordNotificationsEnabled.Value;
+        }
+
+        if (request.DiscordWebhookUrl is not null)
+        {
+            Config.DiscordWebhookUrl = request.DiscordWebhookUrl.Trim();
+        }
+
+        await _configStore.SaveAsync(Config, cancellationToken);
         return Config;
     }
 
@@ -192,6 +228,11 @@ public class InMemoryDataStore
             _notifications.Add(Notification.ForDrop(alert));
         }
 
+        if (Config.DiscordNotificationsEnabled && !string.IsNullOrWhiteSpace(Config.DiscordWebhookUrl))
+        {
+            _ = _discordNotificationService.EnqueueDropAsync(alert);
+        }
+
         return alert;
     }
 
@@ -256,9 +297,10 @@ public class InMemoryDataStore
 
     public bool TryRecoverAlert(int itemId, double recoveredPrice)
     {
+        Alert? alert;
         lock (_lock)
         {
-            var alert = _alerts.LastOrDefault(entry => entry.ItemId == itemId && entry.RecoveredAt is null);
+            alert = _alerts.LastOrDefault(entry => entry.ItemId == itemId && entry.RecoveredAt is null);
             if (alert is null)
             {
                 return false;
@@ -273,8 +315,14 @@ public class InMemoryDataStore
                 position.RecoveredAt = alert.RecoveredAt;
                 position.RecoveryPrice = recoveredPrice;
             }
-            return true;
         }
+
+        if (alert is not null && Config.DiscordNotificationsEnabled && !string.IsNullOrWhiteSpace(Config.DiscordWebhookUrl))
+        {
+            _ = _discordNotificationService.EnqueueRecoveryAsync(alert);
+        }
+
+        return true;
     }
 
     public bool HasActiveAlert(int itemId)

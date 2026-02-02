@@ -24,12 +24,15 @@
       :is-user-agent-valid="isUserAgentValid"
       v-model:threshold="threshold"
       v-model:profitTargetPercent="profitTargetPercent"
+      v-model:discordNotificationsEnabled="discordNotificationsEnabled"
+      v-model:discordWebhookUrl="discordWebhookUrl"
       v-model:recoveryThreshold="recoveryThreshold"
       v-model:rollingWindowSize="rollingWindowSize"
       v-model:fetchInterval="fetchInterval"
       v-model:userAgent="userAgent"
       @close="toggleSettings"
       @save="handleSaveConfig"
+      @test-discord="handleSendDiscordTest"
     />
 
     <div v-if="refreshError" class="error-banner">
@@ -112,6 +115,7 @@ import { useAlerts } from '../composables/useAlerts';
 import { useNotifications } from '../composables/useNotifications';
 import { usePositions } from '../composables/usePositions';
 import { useToasts } from '../composables/useToasts';
+import { sendDiscordTest } from '../api';
 
 const settingsOpen = ref(false);
 const refreshError = ref('');
@@ -125,6 +129,8 @@ const {
   configError,
   threshold,
   profitTargetPercent,
+  discordNotificationsEnabled,
+  discordWebhookUrl,
   recoveryThreshold,
   rollingWindowSize,
   fetchInterval,
@@ -310,6 +316,16 @@ const toggleSettings = () => {
 const handleSaveConfig = async () => {
   await saveConfig();
   updateTimestamp();
+};
+
+const handleSendDiscordTest = async () => {
+  try {
+    await sendDiscordTest();
+    pushToast('Sent Discord test alert.', 'success');
+  } catch (error) {
+    reportRefreshError(error, 'Failed to send Discord test alert.');
+    pushToast('Failed to send Discord test alert.', 'error');
+  }
 };
 
 onMounted(async () => {

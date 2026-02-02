@@ -16,7 +16,7 @@ const request = async (path, options = {}) => {
     throw new Error(message || `Request failed: ${response.status}`);
   }
 
-  if (response.status === 204) {
+  if (response.status === 204 || response.status === 202) {
     return null;
   }
 
@@ -29,6 +29,12 @@ export const updateConfig = (payload) =>
   request('/api/config', {
     method: 'PUT',
     body: JSON.stringify(payload)
+  });
+
+export const sendDiscordTest = (message) =>
+  request('/api/config/discord-test', {
+    method: 'POST',
+    body: JSON.stringify({ message })
   });
 
 export const searchItems = (query) =>

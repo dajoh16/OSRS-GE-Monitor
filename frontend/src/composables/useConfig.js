@@ -10,8 +10,20 @@ export const useConfig = () => {
   const rollingWindowSize = ref(30);
   const fetchInterval = ref(60);
   const userAgent = ref('');
+  const discordNotificationsEnabled = ref(false);
+  const discordWebhookUrl = ref('');
 
   const isUserAgentValid = computed(() => userAgent.value.trim().length > 0);
+  const isDiscordWebhookValid = computed(() => {
+    if (!discordNotificationsEnabled.value) {
+      return true;
+    }
+    const value = discordWebhookUrl.value.trim();
+    return (
+      value.startsWith('https://discord.com/api/webhooks/') ||
+      value.startsWith('https://discordapp.com/api/webhooks/')
+    );
+  });
 
   const loadConfig = async () => {
     configError.value = '';
@@ -23,6 +35,8 @@ export const useConfig = () => {
       rollingWindowSize.value = data.rollingWindowSize ?? 30;
       fetchInterval.value = data.fetchIntervalSeconds ?? 60;
       userAgent.value = data.userAgent ?? '';
+      discordNotificationsEnabled.value = data.discordNotificationsEnabled ?? false;
+      discordWebhookUrl.value = data.discordWebhookUrl ?? '';
     } catch (error) {
       configError.value = error.message;
     }
@@ -36,10 +50,12 @@ export const useConfig = () => {
         standardDeviationThreshold: threshold.value,
       profitTargetPercent: profitTargetPercent.value / 100,
       recoveryStandardDeviationThreshold: recoveryThreshold.value,
-        rollingWindowSize: rollingWindowSize.value,
-        fetchIntervalSeconds: fetchInterval.value,
-        userAgent: userAgent.value
-      });
+      rollingWindowSize: rollingWindowSize.value,
+      fetchIntervalSeconds: fetchInterval.value,
+      userAgent: userAgent.value,
+      discordNotificationsEnabled: discordNotificationsEnabled.value,
+      discordWebhookUrl: discordWebhookUrl.value
+    });
     } catch (error) {
       configError.value = error.message;
     } finally {
@@ -55,8 +71,11 @@ export const useConfig = () => {
     rollingWindowSize,
     fetchInterval,
     userAgent,
+    discordNotificationsEnabled,
+    discordWebhookUrl,
     profitTargetPercent,
     isUserAgentValid,
+    isDiscordWebhookValid,
     loadConfig,
     saveConfig
   };

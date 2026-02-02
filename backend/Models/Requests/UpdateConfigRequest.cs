@@ -1,11 +1,13 @@
 namespace OSRSGeMonitor.Api.Models.Requests;
 
-public class UpdateConfigRequest
+public sealed record UpdateConfigRequest
 {
-    public double? StandardDeviationThreshold { get; set; }
-    public double? ProfitTargetPercent { get; set; }
-    public double? RecoveryStandardDeviationThreshold { get; set; }
-    public int? RollingWindowSize { get; set; }
-    public int? FetchIntervalSeconds { get; set; }
-    public string? UserAgent { get; set; }
+    public double? StandardDeviationThreshold { get; init; }
+    public double? ProfitTargetPercent { get; init; }
+    public double? RecoveryStandardDeviationThreshold { get; init; }
+    public int? RollingWindowSize { get; init; }
+    public int? FetchIntervalSeconds { get; init; }
+    public string? UserAgent { get; init; }
+    public bool? DiscordNotificationsEnabled { get; init; }
+    public string? DiscordWebhookUrl { get; init; }
 }

@@ -8,4 +8,6 @@ public class GlobalConfig
     public int RollingWindowSize { get; set; } = 30;
     public int FetchIntervalSeconds { get; set; } = 60;
     public string UserAgent { get; set; } = "OSRS-GE-Monitor/1.0 (contact: Discord danmarkdan#6784; GitHub dajoh16)";
+    public bool DiscordNotificationsEnabled { get; set; }
+    public string DiscordWebhookUrl { get; set; } = string.Empty;
 }
