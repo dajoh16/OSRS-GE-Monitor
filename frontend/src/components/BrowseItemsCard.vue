@@ -35,9 +35,14 @@
           <strong>{{ item.name }}</strong>
           <span class="muted">#{{ item.id }}</span>
         </div>
-        <button class="primary" @click="$emit('add', item.id)">
-          Add to watchlist
-        </button>
+        <div class="item-actions">
+          <button class="secondary action-button" @click="$emit('details', item.id)">
+            Details
+          </button>
+          <button class="primary action-button" @click="$emit('add', item.id)">
+            Add to watchlist
+          </button>
+        </div>
       </div>
     </div>
     <div v-if="searchResultsLength" class="pagination">
@@ -67,7 +72,7 @@ defineProps({
   searchPageOptions: Array
 });
 
-defineEmits(['search', 'add']);
+defineEmits(['search', 'add', 'details']);
 
 const searchQuery = defineModel('searchQuery');
 const searchPage = defineModel('searchPage');

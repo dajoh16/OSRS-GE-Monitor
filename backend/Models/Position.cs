@@ -11,4 +11,10 @@ public class Position
     public DateTimeOffset? AcknowledgedAt { get; set; }
     public DateTimeOffset? RecoveredAt { get; set; }
     public double? RecoveryPrice { get; set; }
+    public double? SellPrice { get; set; }
+    public DateTimeOffset? SoldAt { get; set; }
+    public double? TaxRateApplied { get; set; }
+    public double? TaxPaid { get; set; }
+    public double? Profit { get; set; }
+    public bool IsSold => SoldAt.HasValue;
 }

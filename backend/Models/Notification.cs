@@ -3,6 +3,8 @@ namespace OSRSGeMonitor.Api.Models;
 public class Notification
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid AlertId { get; set; }
+    public int ItemId { get; set; }
     public string Type { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;
@@ -12,6 +14,8 @@ public class Notification
     {
         return new Notification
         {
+            AlertId = alert.Id,
+            ItemId = alert.ItemId,
             Type = "drop",
             Title = $"{alert.ItemName} dropped",
             Message = $"Triggered at {alert.TriggerPrice:N0} gp (mean {alert.Mean:N0}, sigma {alert.StandardDeviation:N2}).",
@@ -24,6 +28,8 @@ public class Notification
         var price = alert.RecoveredPrice ?? 0;
         return new Notification
         {
+            AlertId = alert.Id,
+            ItemId = alert.ItemId,
             Type = "recovery",
             Title = $"{alert.ItemName} recovered",
             Message = $"Recovered at {price:N0} gp after the drop alert.",

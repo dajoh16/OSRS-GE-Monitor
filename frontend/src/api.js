@@ -47,6 +47,8 @@ export const getWatchlist = () => request('/api/watchlist');
 export const getWatchlistItem = (itemId) =>
   request(`/api/watchlist/${itemId}`);
 
+export const getWatchlistMarket = () => request('/api/watchlist/market');
+
 export const addWatchlistItem = (itemId) =>
   request('/api/watchlist', {
     method: 'POST',
@@ -79,6 +81,35 @@ export const removeAlert = (alertId) =>
 
 export const getPositions = () => request('/api/positions');
 
+export const addManualPosition = (payload) =>
+  request('/api/positions/manual', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+
+export const sellPosition = (positionId, sellPrice) =>
+  request(`/api/positions/${positionId}/sell`, {
+    method: 'POST',
+    body: JSON.stringify({ sellPrice })
+  });
+
+export const updateBuyPrice = (positionId, buyPrice) =>
+  request(`/api/positions/${positionId}/buy-price`, {
+    method: 'POST',
+    body: JSON.stringify({ buyPrice })
+  });
+
+export const getPositionSummary = () => request('/api/positions/summary');
+
+export const getPositionHistory = (itemId) => {
+  const params = new URLSearchParams();
+  if (itemId) params.set('itemId', String(itemId));
+  return request(`/api/positions/history?${params.toString()}`);
+};
+
+export const getLatestPrice = (itemId) =>
+  request(`/api/prices/${itemId}/latest`);
+
 export const removePosition = (positionId) =>
   request(`/api/positions/${positionId}`, {
     method: 'DELETE'
@@ -96,6 +127,13 @@ export const removeNotification = (notificationId) =>
     method: 'DELETE'
   });
 
+export const getSuppressedNotifications = () => request('/api/notifications/suppressed');
+
+export const removeSuppressedNotification = (itemId) =>
+  request(`/api/notifications/suppressed/${itemId}`, {
+    method: 'DELETE'
+  });
+
 export const getPriceHistory = (itemId, from, to, maxPoints) => {
   const params = new URLSearchParams();
   if (from) params.set('from', from);
@@ -103,3 +141,6 @@ export const getPriceHistory = (itemId, from, to, maxPoints) => {
   if (maxPoints) params.set('maxPoints', String(maxPoints));
   return request(`/api/prices/${itemId}/history?${params.toString()}`);
 };
+
+export const getItemDetails = (itemId) =>
+  request(`/api/items/${itemId}/details`);

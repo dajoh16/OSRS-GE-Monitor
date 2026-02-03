@@ -1,28 +1,40 @@
 using System.Collections.Concurrent;
 using OSRSGeMonitor.Api.Models;
 using OSRSGeMonitor.Api.Models.Requests;
+using OSRSGeMonitor.Api.Models.Responses;
 
 namespace OSRSGeMonitor.Api.Services;
 
 public class InMemoryDataStore
 {
+    public sealed record LatestPriceSnapshot(
+        int ItemId,
+        double? High,
+        double? Low,
+        DateTimeOffset? HighTime,
+        DateTimeOffset? LowTime);
     private readonly object _lock = new();
     private readonly ConcurrentDictionary<int, MonitoredItem> _items = new();
     private readonly List<Position> _positions = new();
     private readonly List<Alert> _alerts = new();
     private readonly List<Notification> _notifications = new();
+    private readonly HashSet<int> _suppressedDropItems = new();
+    private readonly Dictionary<int, LatestPriceSnapshot> _latestPrices = new();
     private readonly SqliteWatchlistStore _watchlistStore;
     private readonly SqliteConfigStore _configStore;
     private readonly DiscordNotificationService _discordNotificationService;
+    private readonly SqlitePositionStore _positionStore;
 
     public InMemoryDataStore(
         SqliteWatchlistStore watchlistStore,
         SqliteConfigStore configStore,
-        DiscordNotificationService discordNotificationService)
+        DiscordNotificationService discordNotificationService,
+        SqlitePositionStore positionStore)
     {
         _watchlistStore = watchlistStore;
         _configStore = configStore;
         _discordNotificationService = discordNotificationService;
+        _positionStore = positionStore;
         foreach (var item in _watchlistStore.GetItems())
         {
             _items[item.Id] = item;
@@ -47,6 +59,17 @@ public class InMemoryDataStore
         Config.UserAgent = persisted.UserAgent;
         Config.DiscordNotificationsEnabled = persisted.DiscordNotificationsEnabled;
         Config.DiscordWebhookUrl = persisted.DiscordWebhookUrl;
+        Config.AlertGraceMinutes = persisted.AlertGraceMinutes;
+    }
+
+    public async Task LoadPositionsAsync(CancellationToken cancellationToken = default)
+    {
+        var persisted = await _positionStore.GetAllAsync(cancellationToken);
+        lock (_lock)
+        {
+            _positions.Clear();
+            _positions.AddRange(persisted);
+        }
     }
 
     public async Task<GlobalConfig> UpdateConfigAsync(UpdateConfigRequest request, CancellationToken cancellationToken = default)
@@ -89,6 +112,11 @@ public class InMemoryDataStore
         if (request.DiscordWebhookUrl is not null)
         {
             Config.DiscordWebhookUrl = request.DiscordWebhookUrl.Trim();
+        }
+
+        if (request.AlertGraceMinutes.HasValue)
+        {
+            Config.AlertGraceMinutes = Math.Max(0, request.AlertGraceMinutes.Value);
         }
 
         await _configStore.SaveAsync(Config, cancellationToken);
@@ -147,7 +175,7 @@ public class InMemoryDataStore
         }
     }
 
-    public Position AddPosition(CreatePositionRequest request)
+    public async Task<Position> AddPositionAsync(CreatePositionRequest request, CancellationToken cancellationToken = default)
     {
         var position = new Position
         {
@@ -163,25 +191,29 @@ public class InMemoryDataStore
             _positions.Add(position);
         }
 
+        await _positionStore.UpsertAsync(position, cancellationToken);
         return position;
     }
 
-    public bool AcknowledgePosition(Guid id)
+    public async Task<bool> AcknowledgePositionAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        Position? position;
         lock (_lock)
         {
-            var position = _positions.FirstOrDefault(entry => entry.Id == id);
+            position = _positions.FirstOrDefault(entry => entry.Id == id);
             if (position is null)
             {
                 return false;
             }
 
             position.AcknowledgedAt = DateTimeOffset.UtcNow;
-            return true;
         }
+
+        await _positionStore.UpsertAsync(position, cancellationToken);
+        return true;
     }
 
-    public bool RemovePosition(Guid id)
+    public async Task<bool> RemovePositionAsync(Guid id, CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
@@ -192,8 +224,9 @@ public class InMemoryDataStore
             }
 
             _positions.RemoveAt(index);
-            return true;
         }
+
+        return await _positionStore.RemoveAsync(id, cancellationToken);
     }
 
     public IReadOnlyCollection<Alert> GetAlerts(string? status)
@@ -203,7 +236,7 @@ public class InMemoryDataStore
             IEnumerable<Alert> alerts = _alerts;
             alerts = status?.ToLowerInvariant() switch
             {
-                "active" => alerts.Where(alert => alert.RecoveredAt is null),
+                "active" => FilterActiveWithGrace(alerts),
                 "recovered" => alerts.Where(alert => alert.RecoveredAt is not null),
                 _ => alerts
             };
@@ -251,6 +284,18 @@ public class InMemoryDataStore
         }
     }
 
+    private IEnumerable<Alert> FilterActiveWithGrace(IEnumerable<Alert> alerts)
+    {
+        var graceMinutes = Math.Max(0, Config.AlertGraceMinutes);
+        if (graceMinutes <= 0)
+        {
+            return alerts.Where(alert => alert.RecoveredAt is null);
+        }
+
+        var cutoff = DateTimeOffset.UtcNow.AddMinutes(-graceMinutes);
+        return alerts.Where(alert => alert.RecoveredAt is null || alert.RecoveredAt >= cutoff);
+    }
+
     public bool RemoveAlert(Guid id)
     {
         lock (_lock)
@@ -266,15 +311,15 @@ public class InMemoryDataStore
         }
     }
 
-    public bool AcknowledgeAlert(Guid id, int quantity, out Position? position)
+    public async Task<Position?> AcknowledgeAlertAsync(Guid id, int quantity, CancellationToken cancellationToken = default)
     {
-        position = null;
+        Position? position = null;
         lock (_lock)
         {
             var alert = _alerts.FirstOrDefault(entry => entry.Id == id);
             if (alert is null)
             {
-                return false;
+                return null;
             }
 
             if (alert.AcknowledgedAt is null)
@@ -291,13 +336,20 @@ public class InMemoryDataStore
                 BoughtAt = DateTimeOffset.UtcNow
             };
             _positions.Add(position);
-            return true;
         }
+
+        if (position is not null)
+        {
+            await _positionStore.UpsertAsync(position, cancellationToken);
+        }
+
+        return position;
     }
 
-    public bool TryRecoverAlert(int itemId, double recoveredPrice)
+    public async Task<bool> TryRecoverAlertAsync(int itemId, double recoveredPrice, CancellationToken cancellationToken = default)
     {
         Alert? alert;
+        List<Position> updatedPositions = new();
         lock (_lock)
         {
             alert = _alerts.LastOrDefault(entry => entry.ItemId == itemId && entry.RecoveredAt is null);
@@ -309,11 +361,13 @@ public class InMemoryDataStore
             alert.RecoveredAt = DateTimeOffset.UtcNow;
             alert.RecoveredPrice = recoveredPrice;
             _notifications.Add(Notification.ForRecovery(alert));
+            _suppressedDropItems.Remove(itemId);
 
             foreach (var position in _positions.Where(entry => entry.ItemId == itemId && entry.RecoveredAt is null))
             {
                 position.RecoveredAt = alert.RecoveredAt;
                 position.RecoveryPrice = recoveredPrice;
+                updatedPositions.Add(position);
             }
         }
 
@@ -322,7 +376,138 @@ public class InMemoryDataStore
             _ = _discordNotificationService.EnqueueRecoveryAsync(alert);
         }
 
+        foreach (var position in updatedPositions)
+        {
+            await _positionStore.UpsertAsync(position, cancellationToken);
+        }
+
         return true;
+    }
+
+    public async Task<Position?> SellPositionAsync(Guid id, double sellPrice, CancellationToken cancellationToken = default)
+    {
+        Position? position;
+        lock (_lock)
+        {
+            position = _positions.FirstOrDefault(entry => entry.Id == id);
+            if (position is null || position.SoldAt.HasValue)
+            {
+                return null;
+            }
+
+            var taxPerItem = CalculateTaxPerItem(sellPrice);
+            var taxPaid = taxPerItem * position.Quantity;
+            var gross = sellPrice * position.Quantity;
+            var cost = position.BuyPrice * position.Quantity;
+            var profit = gross - cost - taxPaid;
+
+            position.SellPrice = sellPrice;
+            position.SoldAt = DateTimeOffset.UtcNow;
+            position.TaxRateApplied = 0.02;
+            position.TaxPaid = taxPaid;
+            position.Profit = profit;
+        }
+
+        await _positionStore.UpsertAsync(position, cancellationToken);
+        return position;
+    }
+
+    public async Task<Position?> UpdateBuyPriceAsync(Guid id, double buyPrice, CancellationToken cancellationToken = default)
+    {
+        Position? position;
+        lock (_lock)
+        {
+            position = _positions.FirstOrDefault(entry => entry.Id == id);
+            if (position is null)
+            {
+                return null;
+            }
+
+            position.BuyPrice = buyPrice;
+
+            if (position.SoldAt.HasValue && position.SellPrice.HasValue)
+            {
+                var taxPaid = position.TaxPaid ?? CalculateTaxPerItem(position.SellPrice.Value) * position.Quantity;
+                position.TaxPaid = taxPaid;
+                position.TaxRateApplied = 0.02;
+                var gross = position.SellPrice.Value * position.Quantity;
+                var cost = position.BuyPrice * position.Quantity;
+                position.Profit = gross - cost - taxPaid;
+            }
+        }
+
+        await _positionStore.UpsertAsync(position, cancellationToken);
+        return position;
+    }
+
+    public PositionSummaryDto GetPositionSummary()
+    {
+        List<Position> soldPositions;
+        lock (_lock)
+        {
+            soldPositions = _positions.Where(entry => entry.SoldAt.HasValue).ToList();
+        }
+
+        var totalProfit = soldPositions.Sum(entry => entry.Profit ?? 0);
+        var totalTax = soldPositions.Sum(entry => entry.TaxPaid ?? 0);
+        var perItem = soldPositions
+            .GroupBy(entry => new { entry.ItemId, entry.ItemName })
+            .Select(group =>
+            {
+                var count = group.Count();
+                var total = group.Sum(entry => entry.Profit ?? 0);
+                var avg = count == 0 ? 0 : total / count;
+                var wins = group.Count(entry => (entry.Profit ?? 0) > 0);
+                var winRate = count == 0 ? 0 : (double)wins / count;
+                return new ItemProfitDto(group.Key.ItemId, group.Key.ItemName, count, total, avg, winRate);
+            })
+            .OrderByDescending(entry => entry.TotalProfit)
+            .ToArray();
+
+        return new PositionSummaryDto(totalProfit, totalTax, perItem);
+    }
+
+    public IReadOnlyCollection<ProfitPointDto> GetProfitHistory(int? itemId)
+    {
+        List<Position> soldPositions;
+        lock (_lock)
+        {
+            soldPositions = _positions
+                .Where(entry => entry.SoldAt.HasValue)
+                .Where(entry => itemId is null || entry.ItemId == itemId.Value)
+                .ToList();
+        }
+
+        var daily = soldPositions
+            .GroupBy(entry => entry.SoldAt!.Value.Date)
+            .Select(group => new
+            {
+                Date = group.Key,
+                Profit = group.Sum(entry => entry.Profit ?? 0)
+            })
+            .OrderBy(entry => entry.Date)
+            .ToList();
+
+        var running = 0.0;
+        var points = new List<ProfitPointDto>();
+        foreach (var day in daily)
+        {
+            running += day.Profit;
+            points.Add(new ProfitPointDto(day.Date.ToString("yyyy-MM-dd"), running));
+        }
+
+        return points;
+    }
+
+    private static double CalculateTaxPerItem(double sellPrice)
+    {
+        if (sellPrice < 100)
+        {
+            return 0;
+        }
+
+        var tax = Math.Floor(sellPrice * 0.02);
+        return Math.Min(tax, 5_000_000);
     }
 
     public bool HasActiveAlert(int itemId)
@@ -330,6 +515,33 @@ public class InMemoryDataStore
         lock (_lock)
         {
             return _alerts.Any(alert => alert.ItemId == itemId && alert.RecoveredAt is null);
+        }
+    }
+
+    public void UpdateLatestPrice(int itemId, LatestPriceSnapshot snapshot)
+    {
+        lock (_lock)
+        {
+            _latestPrices[itemId] = snapshot;
+        }
+    }
+
+    public LatestPriceSnapshot? GetLatestPrice(int itemId)
+    {
+        lock (_lock)
+        {
+            return _latestPrices.TryGetValue(itemId, out var snapshot) ? snapshot : null;
+        }
+    }
+
+    public IReadOnlyCollection<LatestPriceSnapshot> GetLatestPrices(IEnumerable<int> itemIds)
+    {
+        lock (_lock)
+        {
+            return itemIds
+                .Where(id => _latestPrices.ContainsKey(id))
+                .Select(id => _latestPrices[id] with { ItemId = id })
+                .ToArray();
         }
     }
 
@@ -351,6 +563,12 @@ public class InMemoryDataStore
                 return false;
             }
 
+            var notification = _notifications[index];
+            if (IsDropNotification(notification))
+            {
+                _suppressedDropItems.Add(notification.ItemId);
+            }
+
             _notifications.RemoveAt(index);
             return true;
         }
@@ -360,7 +578,43 @@ public class InMemoryDataStore
     {
         lock (_lock)
         {
+            foreach (var notification in _notifications)
+            {
+                if (IsDropNotification(notification))
+                {
+                    _suppressedDropItems.Add(notification.ItemId);
+                }
+            }
             _notifications.Clear();
         }
+    }
+
+    public IReadOnlyCollection<int> GetSuppressedDropItems()
+    {
+        lock (_lock)
+        {
+            return _suppressedDropItems.OrderBy(id => id).ToArray();
+        }
+    }
+
+    public bool IsDropSuppressed(int itemId)
+    {
+        lock (_lock)
+        {
+            return _suppressedDropItems.Contains(itemId);
+        }
+    }
+
+    public void ClearDropSuppression(int itemId)
+    {
+        lock (_lock)
+        {
+            _suppressedDropItems.Remove(itemId);
+        }
+    }
+
+    private static bool IsDropNotification(Notification notification)
+    {
+        return notification.ItemId > 0 && string.Equals(notification.Type, "drop", StringComparison.OrdinalIgnoreCase);
     }
 }

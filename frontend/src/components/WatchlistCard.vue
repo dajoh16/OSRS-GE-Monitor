@@ -4,6 +4,20 @@
       <h2>Watchlist</h2>
       <div class="header-actions">
         <label class="inline-field">
+          Sort by
+          <select v-model="watchlistSortField">
+            <option value="name">Name</option>
+            <option value="id">Id</option>
+            <option value="high">High</option>
+            <option value="low">Low</option>
+            <option value="limit">Limit</option>
+            <option value="afterTax">After-tax</option>
+          </select>
+        </label>
+        <button class="secondary action-button" type="button" @click="toggleSortDirection">
+          {{ watchlistSortDirection === 'asc' ? 'Asc' : 'Desc' }}
+        </button>
+        <label class="inline-field">
           Show
           <select v-model.number="watchlistDisplayLimit">
             <option v-for="size in watchlistLimitOptions" :key="size" :value="size">
@@ -24,17 +38,37 @@
     </div>
     <div v-if="displayedWatchlist.length" class="list list--spaced">
       <div v-for="item in displayedWatchlist" :key="item.id" class="list__item">
-        <div>
-          <strong>{{ item.name }}</strong>
-          <span class="muted">#{{ item.id }}</span>
-        </div>
-        <div class="item-actions">
-          <router-link class="ghost" :to="`/history/${item.id}`">
-            View history
-          </router-link>
-          <button class="ghost" @click="$emit('remove', item.id)">
-            Remove
-          </button>
+        <div class="watchlist-row">
+          <div class="watchlist-row__header">
+            <strong>{{ item.name }}</strong>
+            <span class="muted">#{{ item.id }}</span>
+          </div>
+          <div class="watchlist-row__market">
+            <span v-if="item.marketHigh || item.marketLow" class="muted">
+              High {{ item.marketHigh ?? '—' }} / Low {{ item.marketLow ?? '—' }} · Limit
+              {{ item.buyLimit ?? '—' }}
+            </span>
+            <span v-else class="muted">Market data pending...</span>
+          </div>
+          <div v-if="item.marketHigh || item.marketLow" class="watchlist-row__market">
+            <span class="muted">
+              Spread {{ formatNumber(spread(item)) }} · After tax
+              <span :class="['profit', afterTaxProfit(item) >= 0 ? 'positive' : 'negative']">
+                {{ formatNumber(afterTaxProfit(item)) }}
+              </span>
+            </span>
+          </div>
+          <div class="watchlist-row__actions">
+            <button class="secondary action-button" @click="$emit('details', item.id)">
+              Details
+            </button>
+            <router-link class="secondary action-button button-link" :to="`/history/${item.id}`">
+              View history
+            </router-link>
+            <button class="secondary danger action-button" @click="$emit('remove', item.id)">
+              Remove
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -78,9 +112,37 @@ defineProps({
   watchlistLimitOptions: Array
 });
 
-defineEmits(['remove', 'bulk-add']);
+defineEmits(['remove', 'bulk-add', 'details']);
 
 const watchlistQuery = defineModel('watchlistQuery');
 const watchlistDisplayLimit = defineModel('watchlistDisplayLimit');
 const bulkNames = defineModel('bulkNames');
+const watchlistSortField = defineModel('watchlistSortField');
+const watchlistSortDirection = defineModel('watchlistSortDirection');
+
+const formatNumber = (value) => {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return '—';
+  }
+  return Math.round(value).toLocaleString();
+};
+
+const spread = (item) => {
+  if (item.marketHigh == null || item.marketLow == null) {
+    return null;
+  }
+  return item.marketHigh - item.marketLow;
+};
+
+const afterTaxProfit = (item) => {
+  if (item.marketHigh == null || item.marketLow == null) {
+    return null;
+  }
+  const tax = item.marketHigh < 100 ? 0 : Math.floor(item.marketHigh * 0.02);
+  return item.marketHigh - item.marketLow - tax;
+};
+
+const toggleSortDirection = () => {
+  watchlistSortDirection.value = watchlistSortDirection.value === 'asc' ? 'desc' : 'asc';
+};
 </script>

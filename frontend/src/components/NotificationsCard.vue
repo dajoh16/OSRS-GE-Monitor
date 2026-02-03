@@ -13,6 +13,9 @@
         </button>
       </div>
       <div class="header-actions">
+        <button class="secondary action-button" type="button" @click="$emit('open-suppressed')">
+          Suppressed
+        </button>
         <label class="inline-field">
           Show
           <select v-model.number="notificationDisplayLimit">
@@ -46,6 +49,29 @@
     <div v-else class="empty">
       Price drop and recovery notifications will appear here.
     </div>
+    <div v-if="suppressedOpen" class="modal-overlay" @click.self="$emit('close-suppressed')">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>Suppressed items</h3>
+          <button class="ghost" type="button" @click="$emit('close-suppressed')">Close</button>
+        </div>
+        <div v-if="suppressedLoading" class="muted">Loading...</div>
+        <div v-else-if="!suppressedItems.length" class="empty">
+          No suppressed items.
+        </div>
+        <div v-else class="list">
+          <div v-for="item in suppressedItems" :key="item.itemId" class="list__item">
+            <div>
+              <strong>{{ item.itemName }}</strong>
+              <p class="muted">Item #{{ item.itemId }}</p>
+            </div>
+            <button class="secondary danger action-button" @click="$emit('unsuppress', item.itemId)">
+              Remove suppression
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -53,10 +79,19 @@
 defineProps({
   notifications: Array,
   displayedNotifications: Array,
-  notificationLimitOptions: Array
+  notificationLimitOptions: Array,
+  suppressedOpen: Boolean,
+  suppressedItems: Array,
+  suppressedLoading: Boolean
 });
 
-defineEmits(['acknowledge', 'acknowledge-all']);
+defineEmits([
+  'acknowledge',
+  'acknowledge-all',
+  'open-suppressed',
+  'close-suppressed',
+  'unsuppress'
+]);
 
 const notificationDisplayLimit = defineModel('notificationDisplayLimit');
 

@@ -12,6 +12,7 @@ export const useConfig = () => {
   const userAgent = ref('');
   const discordNotificationsEnabled = ref(false);
   const discordWebhookUrl = ref('');
+  const alertGraceMinutes = ref(10);
 
   const isUserAgentValid = computed(() => userAgent.value.trim().length > 0);
   const isDiscordWebhookValid = computed(() => {
@@ -37,6 +38,7 @@ export const useConfig = () => {
       userAgent.value = data.userAgent ?? '';
       discordNotificationsEnabled.value = data.discordNotificationsEnabled ?? false;
       discordWebhookUrl.value = data.discordWebhookUrl ?? '';
+      alertGraceMinutes.value = data.alertGraceMinutes ?? 10;
     } catch (error) {
       configError.value = error.message;
     }
@@ -48,14 +50,15 @@ export const useConfig = () => {
     try {
       await updateConfig({
         standardDeviationThreshold: threshold.value,
-      profitTargetPercent: profitTargetPercent.value / 100,
-      recoveryStandardDeviationThreshold: recoveryThreshold.value,
-      rollingWindowSize: rollingWindowSize.value,
-      fetchIntervalSeconds: fetchInterval.value,
-      userAgent: userAgent.value,
-      discordNotificationsEnabled: discordNotificationsEnabled.value,
-      discordWebhookUrl: discordWebhookUrl.value
-    });
+        profitTargetPercent: profitTargetPercent.value / 100,
+        recoveryStandardDeviationThreshold: recoveryThreshold.value,
+        rollingWindowSize: rollingWindowSize.value,
+        fetchIntervalSeconds: fetchInterval.value,
+        userAgent: userAgent.value,
+        discordNotificationsEnabled: discordNotificationsEnabled.value,
+        discordWebhookUrl: discordWebhookUrl.value,
+        alertGraceMinutes: alertGraceMinutes.value
+      });
     } catch (error) {
       configError.value = error.message;
     } finally {
@@ -73,6 +76,7 @@ export const useConfig = () => {
     userAgent,
     discordNotificationsEnabled,
     discordWebhookUrl,
+    alertGraceMinutes,
     profitTargetPercent,
     isUserAgentValid,
     isDiscordWebhookValid,

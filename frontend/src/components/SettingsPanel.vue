@@ -34,6 +34,14 @@
         <span v-if="!isDiscordWebhookValid" class="error">
           Enter a valid Discord webhook URL to enable alerts.
         </span>
+        <button
+          class="secondary settings-inline-button"
+          type="button"
+          :disabled="configLoading || !isUserAgentValid || !isDiscordWebhookValid || !discordNotificationsEnabled"
+          @click="$emit('test-discord')"
+        >
+          Send test alert
+        </button>
       </label>
       <label class="field">
         Rolling window size
@@ -42,6 +50,11 @@
       <label class="field">
         Fetch interval (seconds)
         <input v-model.number="fetchInterval" type="number" min="10" step="5" />
+      </label>
+      <label class="field">
+        Alert grace (minutes)
+        <input v-model.number="alertGraceMinutes" type="number" min="0" step="1" />
+        <span class="muted">Recovered alerts stay visible for this many minutes.</span>
       </label>
       <label class="field">
         API User-Agent
@@ -57,14 +70,6 @@
     </div>
     <div class="settings-actions">
       <span v-if="configError" class="error">{{ configError }}</span>
-      <button
-        class="secondary"
-        type="button"
-        :disabled="configLoading || !isUserAgentValid || !isDiscordWebhookValid || !discordNotificationsEnabled"
-        @click="$emit('test-discord')"
-      >
-        Send test alert
-      </button>
       <button
         class="primary"
         :disabled="configLoading || !isUserAgentValid || !isDiscordWebhookValid"
@@ -96,6 +101,7 @@ const fetchInterval = defineModel('fetchInterval');
 const userAgent = defineModel('userAgent');
 const discordNotificationsEnabled = defineModel('discordNotificationsEnabled');
 const discordWebhookUrl = defineModel('discordWebhookUrl');
+const alertGraceMinutes = defineModel('alertGraceMinutes');
 
 const isDiscordWebhookValid = computed(() => {
   if (!discordNotificationsEnabled.value) {

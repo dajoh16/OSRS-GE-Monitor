@@ -30,10 +30,37 @@ public sealed class SqliteConfigStore
                 FetchIntervalSeconds INTEGER NOT NULL,
                 UserAgent TEXT NOT NULL,
                 DiscordNotificationsEnabled INTEGER NOT NULL,
-                DiscordWebhookUrl TEXT
+                DiscordWebhookUrl TEXT,
+                AlertGraceMinutes INTEGER NOT NULL
             );
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
+
+        await EnsureColumnAsync(connection, "AlertGraceMinutes", "INTEGER NOT NULL DEFAULT 10", cancellationToken);
+    }
+
+    private static async Task EnsureColumnAsync(
+        SqliteConnection connection,
+        string columnName,
+        string columnDefinition,
+        CancellationToken cancellationToken)
+    {
+        await using var pragma = connection.CreateCommand();
+        pragma.CommandText = "PRAGMA table_info(AppConfig);";
+        await using var reader = await pragma.ExecuteReaderAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var name = reader.GetString(1);
+            if (string.Equals(name, columnName, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+
+        await using var alter = connection.CreateCommand();
+        alter.CommandText = $"ALTER TABLE AppConfig ADD COLUMN {columnName} {columnDefinition};";
+        await alter.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<GlobalConfig?> LoadAsync(CancellationToken cancellationToken = default)
@@ -51,7 +78,8 @@ public sealed class SqliteConfigStore
                 FetchIntervalSeconds,
                 UserAgent,
                 DiscordNotificationsEnabled,
-                DiscordWebhookUrl
+                DiscordWebhookUrl,
+                AlertGraceMinutes
             FROM AppConfig
             WHERE Id = $id
             LIMIT 1;
@@ -64,7 +92,7 @@ public sealed class SqliteConfigStore
             return null;
         }
 
-        return new GlobalConfig
+        var config = new GlobalConfig
         {
             StandardDeviationThreshold = reader.GetDouble(0),
             ProfitTargetPercent = reader.GetDouble(1),
@@ -75,6 +103,13 @@ public sealed class SqliteConfigStore
             DiscordNotificationsEnabled = reader.GetInt64(6) == 1,
             DiscordWebhookUrl = reader.IsDBNull(7) ? string.Empty : reader.GetString(7)
         };
+
+        if (!reader.IsDBNull(8))
+        {
+            config.AlertGraceMinutes = reader.GetInt32(8);
+        }
+
+        return config;
     }
 
     public async Task SaveAsync(GlobalConfig config, CancellationToken cancellationToken = default)
@@ -93,7 +128,8 @@ public sealed class SqliteConfigStore
                 FetchIntervalSeconds,
                 UserAgent,
                 DiscordNotificationsEnabled,
-                DiscordWebhookUrl
+                DiscordWebhookUrl,
+                AlertGraceMinutes
             )
             VALUES (
                 $id,
@@ -104,7 +140,8 @@ public sealed class SqliteConfigStore
                 $fetchIntervalSeconds,
                 $userAgent,
                 $discordNotificationsEnabled,
-                $discordWebhookUrl
+                $discordWebhookUrl,
+                $alertGraceMinutes
             )
             ON CONFLICT(Id) DO UPDATE SET
                 StandardDeviationThreshold = excluded.StandardDeviationThreshold,
@@ -114,7 +151,8 @@ public sealed class SqliteConfigStore
                 FetchIntervalSeconds = excluded.FetchIntervalSeconds,
                 UserAgent = excluded.UserAgent,
                 DiscordNotificationsEnabled = excluded.DiscordNotificationsEnabled,
-                DiscordWebhookUrl = excluded.DiscordWebhookUrl;
+                DiscordWebhookUrl = excluded.DiscordWebhookUrl,
+                AlertGraceMinutes = excluded.AlertGraceMinutes;
             """;
 
         command.Parameters.AddWithValue("$id", SingleRowId);
@@ -128,6 +166,7 @@ public sealed class SqliteConfigStore
         command.Parameters.AddWithValue(
             "$discordWebhookUrl",
             string.IsNullOrWhiteSpace(config.DiscordWebhookUrl) ? DBNull.Value : config.DiscordWebhookUrl);
+        command.Parameters.AddWithValue("$alertGraceMinutes", config.AlertGraceMinutes);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

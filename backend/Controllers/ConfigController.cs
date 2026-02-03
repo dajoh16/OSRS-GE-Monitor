@@ -32,6 +32,11 @@ public class ConfigController : ControllerBase
             return BadRequest("User-Agent is required.");
         }
 
+        if (request.AlertGraceMinutes.HasValue && request.AlertGraceMinutes.Value < 0)
+        {
+            return BadRequest("Alert grace minutes must be zero or greater.");
+        }
+
         var current = _dataStore.Config;
         var enabled = request.DiscordNotificationsEnabled ?? current.DiscordNotificationsEnabled;
         var webhookUrl = request.DiscordWebhookUrl ?? current.DiscordWebhookUrl;

@@ -3,6 +3,7 @@
     <div class="card__header">
       <h2>Positions</h2>
       <div class="header-actions">
+        <router-link class="ghost" to="/profit">View P&L charts</router-link>
         <label class="inline-field">
           Show
           <select v-model.number="positionDisplayLimit">
@@ -16,6 +17,9 @@
     </div>
     <div v-if="displayedPositions.length" class="list">
       <div v-for="position in displayedPositions" :key="position.id" class="list__item">
+        <span class="pill status-pill" :class="position.status">
+          {{ position.statusLabel }}
+        </span>
         <div>
           <strong>{{ position.itemName }}</strong>
           <p class="muted">
@@ -23,12 +27,48 @@
               position.recoveryPrice
             }}
           </p>
+          <p v-if="position.soldAt" class="muted">
+            Sold @ {{ position.sellPrice }} - Tax {{ position.taxPaid }} - Profit
+            <span :class="['profit', position.profit >= 0 ? 'positive' : 'negative']">
+              {{ position.profit }}
+            </span>
+          </p>
         </div>
         <div class="item-actions">
-          <span class="pill" :class="position.status">
-            {{ position.statusLabel }}
-          </span>
-          <button class="ghost" @click="$emit('remove', position.id)">
+          <div v-if="!position.soldAt" class="sell-controls">
+            <input
+              v-model.number="sellPrices[position.id]"
+              type="number"
+              min="1"
+              placeholder="Sell price"
+            />
+            <button
+              class="primary action-button"
+              :disabled="!sellPrices[position.id]"
+              @click="emitSell(position.id)"
+            >
+              Sell
+            </button>
+            <button class="secondary action-button" type="button" @click="emitMarket(position.id)">
+              Market
+            </button>
+          </div>
+          <div class="sell-controls">
+            <input
+              v-model.number="buyPrices[position.id]"
+              type="number"
+              min="1"
+              placeholder="Edit buy"
+            />
+            <button
+              class="secondary action-button"
+              :disabled="!buyPrices[position.id]"
+              @click="emitBuyUpdate(position.id)"
+            >
+              Update
+            </button>
+          </div>
+          <button class="secondary danger action-button" @click="$emit('remove', position.id)">
             Remove
           </button>
         </div>
@@ -37,17 +77,90 @@
     <div v-else class="empty">
       Acknowledge an alert to start tracking a bought item.
     </div>
+    <div class="manual-entry">
+      <h3>Manual entry</h3>
+      <div class="manual-entry__fields">
+        <label class="field">
+          Item name
+          <input v-model.trim="manualName" type="text" placeholder="Yew logs" />
+        </label>
+        <label class="field">
+          Quantity
+          <input v-model.number="manualQuantity" type="number" min="1" step="1" />
+        </label>
+        <label class="field">
+          Buy price
+          <input v-model.number="manualBuyPrice" type="number" min="1" step="1" />
+        </label>
+      </div>
+      <p v-if="manualName" class="muted">
+        <span v-if="manualMatchLoading">Matching item...</span>
+        <span v-else-if="manualMatch">Best match: {{ manualMatch }}</span>
+        <span v-else>No catalog match yet.</span>
+      </p>
+      <button class="primary" type="button" :disabled="!canSubmitManual" @click="submitManual">
+        Add manual position
+      </button>
+    </div>
   </div>
 </template>
 
 <script setup>
+import { computed, ref } from 'vue';
+
 defineProps({
   displayedPositions: Array,
   positionsCount: Number,
-  positionLimitOptions: Array
+  positionLimitOptions: Array,
+  manualMatch: String,
+  manualMatchLoading: Boolean
 });
 
-defineEmits(['remove']);
+const emit = defineEmits(['remove', 'sell', 'market', 'update-buy', 'manual-add']);
 
 const positionDisplayLimit = defineModel('positionDisplayLimit');
+const sellPrices = defineModel('sellPrices');
+const buyPrices = defineModel('buyPrices');
+const manualName = defineModel('manualName');
+const manualQuantity = ref(1);
+const manualBuyPrice = ref(null);
+
+const canSubmitManual = computed(() => {
+  return manualName.value.trim().length > 0 && Number(manualQuantity.value) > 0 && Number(manualBuyPrice.value) > 0;
+});
+const emitSell = (id) => {
+  const price = Number(sellPrices.value[id]);
+  if (!Number.isFinite(price) || price <= 0) {
+    return;
+  }
+  emit('sell', { id, price });
+  sellPrices.value[id] = null;
+};
+
+const emitMarket = (id) => {
+  emit('market', id);
+};
+
+const emitBuyUpdate = (id) => {
+  const price = Number(buyPrices.value[id]);
+  if (!Number.isFinite(price) || price <= 0) {
+    return;
+  }
+  emit('update-buy', { id, price });
+  buyPrices.value[id] = null;
+};
+
+const submitManual = () => {
+  if (!canSubmitManual.value) {
+    return;
+  }
+  emit('manual-add', {
+    name: manualName.value.trim(),
+    quantity: Number(manualQuantity.value),
+    buyPrice: Number(manualBuyPrice.value)
+  });
+  manualName.value = '';
+  manualQuantity.value = 1;
+  manualBuyPrice.value = null;
+};
 </script>

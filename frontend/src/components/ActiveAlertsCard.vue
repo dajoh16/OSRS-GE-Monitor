@@ -19,10 +19,10 @@
             min="1"
             placeholder="Qty"
           />
-          <button class="primary" @click="$emit('acknowledge', alert)">
+          <button class="primary action-button" @click="$emit('acknowledge', alert)">
             Bought
           </button>
-          <button class="ghost" @click="$emit('remove', alert.id)">
+          <button class="secondary danger action-button" @click="$emit('remove', alert.id)">
             Remove
           </button>
         </div>

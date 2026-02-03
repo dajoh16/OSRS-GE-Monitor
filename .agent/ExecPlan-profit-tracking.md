@@ -37,14 +37,14 @@ Positions are currently stored in memory and not persisted. Positions are create
 
 ## Plan of Work
 
-First, define the sales and P&L data model. We will extend `Position` with `SellPrice`, `SoldAt`, `TaxRateApplied`, and computed `Profit` fields. Profit should be calculated as `(sellPrice * quantity) - (buyPrice * quantity) - (sellPrice * quantity * taxRate)`. Store the tax rate (e.g., 2%) used for the sale.
+First, define the sales and P&L data model. We will extend `Position` with `SellPrice`, `SoldAt`, `TaxRateApplied`, `TaxPaid`, and computed `Profit` fields. Profit must follow OSRS GE tax rules: tax is 2% of the sale price per item, **rounded down to whole gp**, **capped at 5,000,000 gp per item**, and **no tax if the item’s sale price is under 100 gp**. Compute `taxPerItem = 0` if `sellPrice < 100`, else `min(floor(sellPrice * 0.02), 5_000_000)`. Then `taxPaid = taxPerItem * quantity`. Profit is `(sellPrice * quantity) - (buyPrice * quantity) - taxPaid`. Store `TaxRateApplied = 0.02` for transparency even when tax is zero because of the <100gp rule.
 
-Second, add SQLite persistence. Create a new SQLite table `Positions` to store buy and sell data. Add a `SqlitePositionStore` with methods for upsert, update with sell price, and read all positions (including unsold).
+Second, add SQLite persistence. Create a new SQLite table `Positions` to store buy and sell data. Add a `SqlitePositionStore` with methods for upsert, update with sell price, and read all positions (including unsold). Ensure `TaxPaid` and `TaxRateApplied` are persisted and not recomputed on load.
 
 Third, update `InMemoryDataStore` so positions are loaded from SQLite at startup, and any position updates (buy and sell) are persisted immediately.
 
 Fourth, add API endpoints:
-  - `POST /api/positions/{id}/sell` with `{ sellPrice }` to mark as sold.
+  - `POST /api/positions/{id}/sell` with `{ sellPrice }` to mark as sold and compute tax/profit using OSRS GE tax rules.
   - `GET /api/positions/summary` to return total P&L and per-item aggregates (count, total profit, average profit, win rate).
   - `GET /api/positions/history` to return a time series of profit totals by date for charting.
 
@@ -63,10 +63,10 @@ Work in `C:\dev\Freetime\OSRS-GE-Monitor`.
    - Create `backend/Services/SqlitePositionStore.cs` with CRUD and sell-update functions.
    - Add table `Positions` in SQLite with fields:
      `Id (TEXT)`, `ItemId (INT)`, `ItemName (TEXT)`, `Quantity (INT)`, `BuyPrice (REAL)`, `BoughtAt (TEXT)`,
-     `SellPrice (REAL NULL)`, `SoldAt (TEXT NULL)`, `TaxRateApplied (REAL NULL)`, `Profit (REAL NULL)`.
+     `SellPrice (REAL NULL)`, `SoldAt (TEXT NULL)`, `TaxRateApplied (REAL NULL)`, `TaxPaid (REAL NULL)`, `Profit (REAL NULL)`.
 
 2. Update models:
-   - Extend `backend/Models/Position.cs` to include `SellPrice`, `SoldAt`, `TaxRateApplied`, `Profit`, and `IsSold`.
+   - Extend `backend/Models/Position.cs` to include `SellPrice`, `SoldAt`, `TaxRateApplied`, `TaxPaid`, `Profit`, and `IsSold`.
 
 3. Update data store:
    - Load positions from SQLite into memory at startup.
@@ -118,9 +118,10 @@ Positions API:
   - `GET /api/positions/history` returns:
       `[{ date: \"2026-02-02\", totalProfit: 12345 }]`
 
-Profit calculation:
+Profit calculation (OSRS GE tax rules):
   - `gross = sellPrice * quantity`
-  - `tax = gross * 0.02`
-  - `profit = gross - (buyPrice * quantity) - tax`
+  - `taxPerItem = 0 if sellPrice < 100 else min(floor(sellPrice * 0.02), 5_000_000)`
+  - `taxPaid = taxPerItem * quantity`
+  - `profit = gross - (buyPrice * quantity) - taxPaid`
 
 Change note: 2026-02-02 / Codex. Created initial ExecPlan for position sales and P&L tracking.

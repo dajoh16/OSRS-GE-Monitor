@@ -86,6 +86,13 @@ public class PriceMonitorService : BackgroundService
                 continue;
             }
 
+            _dataStore.UpdateLatestPrice(item.Id, new InMemoryDataStore.LatestPriceSnapshot(
+                item.Id,
+                priceData.High,
+                priceData.Low,
+                priceData.GetHighTime(),
+                priceData.GetLowTime()));
+
             var (mean, stdDev, sampleSize) = await _timeSeriesService.GetRollingStatsAsync(
                 item.Id,
                 StatsTimestep,
@@ -104,7 +111,10 @@ public class PriceMonitorService : BackgroundService
             var minDrop = mean < 100 ? mean * requiredDropPercent : Math.Max(10, mean * requiredDropPercent);
             var meetsMinDrop = dropAmount >= minDrop && dropPercent >= requiredDropPercent;
 
-            if (price.Value < dropThreshold && meetsMinDrop && !_dataStore.HasActiveAlert(item.Id))
+            if (price.Value < dropThreshold
+                && meetsMinDrop
+                && !_dataStore.HasActiveAlert(item.Id)
+                && !_dataStore.IsDropSuppressed(item.Id))
             {
                 _dataStore.AddAlert(new Alert
                 {
@@ -120,7 +130,7 @@ public class PriceMonitorService : BackgroundService
             var recoveryThreshold = mean - (_dataStore.Config.RecoveryStandardDeviationThreshold * stdDev);
             if (price.Value >= recoveryThreshold)
             {
-                _dataStore.TryRecoverAlert(item.Id, price.Value);
+                await _dataStore.TryRecoverAlertAsync(item.Id, price.Value, stoppingToken);
             }
         }
     }
@@ -134,6 +144,8 @@ public class PriceMonitorService : BackgroundService
     {
         public double? High { get; set; }
         public double? Low { get; set; }
+        public long? HighTime { get; set; }
+        public long? LowTime { get; set; }
 
         public double? GetRepresentativePrice()
         {
@@ -144,6 +156,14 @@ public class PriceMonitorService : BackgroundService
 
             return High ?? Low;
         }
+
+        public DateTimeOffset? GetHighTime() => HighTime.HasValue
+            ? DateTimeOffset.FromUnixTimeSeconds(HighTime.Value)
+            : null;
+
+        public DateTimeOffset? GetLowTime() => LowTime.HasValue
+            ? DateTimeOffset.FromUnixTimeSeconds(LowTime.Value)
+            : null;
     }
 
     private static void ApplyUserAgent(HttpClient client, string userAgent)

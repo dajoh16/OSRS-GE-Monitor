@@ -166,6 +166,11 @@ button {
   flex-wrap: wrap;
 }
 
+.settings-inline-button {
+  align-self: flex-start;
+  margin-top: 6px;
+}
+
 .hero h1 {
   margin: 0 0 8px;
   font-size: 2.2rem;
@@ -223,6 +228,71 @@ button {
   padding: 10px 14px;
   border-radius: 12px;
   font-size: 0.9rem;
+}
+
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 32px 20px 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.chart-wrap {
+  height: 320px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.data-table th,
+.data-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(143, 107, 43, 0.35);
+  text-align: left;
+}
+
+.data-table th {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #ffff00;
+  text-shadow:
+    -1px -1px 0 #000,
+    0 -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 0 0 #000,
+    1px 0 0 #000,
+    -1px 1px 0 #000,
+    0 1px 0 #000,
+    1px 1px 0 #000;
+}
+
+.data-table tbody tr:nth-child(even) {
+  background: rgba(255, 240, 200, 0.35);
 }
 
 .card {
@@ -420,6 +490,7 @@ button {
   border-radius: 10px;
   padding: 10px 14px;
   cursor: pointer;
+  min-height: 38px;
 }
 
 .primary {
@@ -443,12 +514,25 @@ button {
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
+.secondary.danger {
+  background: linear-gradient(180deg, #f6c2b0, #e59b85);
+  color: #5b1d12;
+  border-color: #b46a58;
+}
+
 .ghost {
   background: transparent;
   color: var(--accent);
   text-decoration: none;
   font-weight: 700;
   letter-spacing: 0.02em;
+}
+
+.button-link {
+  text-decoration: none;
+  font-size: inherit;
+  font-weight: inherit;
+  text-transform: uppercase;
 }
 
 .ghost-inline {
@@ -484,12 +568,36 @@ button {
   justify-content: space-between;
   gap: 16px;
   align-items: center;
-  padding: 12px 14px;
+  flex-wrap: wrap;
+  padding: 16px 14px 12px;
   border-radius: 12px;
   background: linear-gradient(180deg, #fff2cf 0%, #f6deb1 100%);
   border: 1px solid var(--border);
   box-shadow: var(--inner-shadow);
   position: relative;
+}
+
+.watchlist-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.watchlist-row__header {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.watchlist-row__market {
+  display: flex;
+}
+
+.watchlist-row__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .list__item p {
@@ -538,6 +646,86 @@ button {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 100%;
+}
+
+.sell-controls {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 100%;
+}
+
+.sell-controls input {
+  width: 110px;
+  max-width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fff3d9;
+  color: var(--text);
+  box-shadow: var(--inner-shadow);
+}
+
+.status-pill {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+}
+
+.action-button {
+  min-width: 96px;
+}
+
+.manual-entry {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(143, 107, 43, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.manual-entry__fields {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.manual-entry h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: #ffff00;
+  text-shadow:
+    -1px -1px 0 #000,
+    0 -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 0 0 #000,
+    1px 0 0 #000,
+    -1px 1px 0 #000,
+    0 1px 0 #000,
+    1px 1px 0 #000;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.primary,
+.secondary,
+.ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.action-button {
+  min-height: 38px;
 }
 
 .action-group input {
@@ -615,6 +803,18 @@ button {
 
 .pill.open {
   background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.profit {
+  font-weight: 700;
+}
+
+.profit.positive {
+  color: var(--success-text);
+}
+
+.profit.negative {
   color: var(--danger-text);
 }
 
@@ -698,6 +898,92 @@ select:focus {
 
 .toast.error {
   background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(25, 18, 10, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 1200;
+}
+
+.modal-card {
+  width: min(560px, 100%);
+  max-height: 80vh;
+  overflow: auto;
+  background: linear-gradient(180deg, #fff8e5 0%, var(--card) 60%, #f6e3b7 100%);
+  border-radius: 16px;
+  padding: 20px 24px;
+  box-shadow: var(--shadow), var(--inner-shadow);
+  border: 1px solid var(--border);
+  position: relative;
+}
+
+.modal-card::before {
+  content: '';
+  position: absolute;
+  inset: 10px;
+  border: 1px solid rgba(143, 107, 43, 0.22);
+  border-radius: 12px;
+  pointer-events: none;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.modal-header h3 {
+  margin: 0;
+  color: #ffff00;
+  text-shadow:
+    -1px -1px 0 #000,
+    0 -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 0 0 #000,
+    1px 0 0 #000,
+    -1px 1px 0 #000,
+    0 1px 0 #000,
+    1px 1px 0 #000;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.details-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.details-summary strong {
+  display: block;
+  font-size: 1.1rem;
+}
+
+.details-meta,
+.details-trend {
+  background: rgba(255, 240, 200, 0.35);
+  border: 1px solid rgba(143, 107, 43, 0.25);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.trend {
+  font-weight: 700;
+}
+
+.trend.up {
+  color: var(--success-text);
+}
+
+.trend.down {
   color: var(--danger-text);
 }
 

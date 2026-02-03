@@ -10,4 +10,5 @@ public class GlobalConfig
     public string UserAgent { get; set; } = "OSRS-GE-Monitor/1.0 (contact: Discord danmarkdan#6784; GitHub dajoh16)";
     public bool DiscordNotificationsEnabled { get; set; }
     public string DiscordWebhookUrl { get; set; } = string.Empty;
+    public int AlertGraceMinutes { get; set; } = 10;
 }

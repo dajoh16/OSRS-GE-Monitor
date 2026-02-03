@@ -10,4 +10,5 @@ public sealed record UpdateConfigRequest
     public string? UserAgent { get; init; }
     public bool? DiscordNotificationsEnabled { get; init; }
     public string? DiscordWebhookUrl { get; init; }
+    public int? AlertGraceMinutes { get; init; }
 }

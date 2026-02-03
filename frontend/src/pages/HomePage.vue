@@ -30,6 +30,7 @@
       v-model:rollingWindowSize="rollingWindowSize"
       v-model:fetchInterval="fetchInterval"
       v-model:userAgent="userAgent"
+      v-model:alertGraceMinutes="alertGraceMinutes"
       @close="toggleSettings"
       @save="handleSaveConfig"
       @test-discord="handleSendDiscordTest"
@@ -53,6 +54,7 @@
       :search-page-options="searchPageOptions"
       @search="runSearch"
       @add="handleAddToWatchlist"
+      @details="handleOpenDetails"
     />
 
     <section class="grid two-col">
@@ -67,8 +69,14 @@
         :notifications="notifications"
         :displayed-notifications="displayedNotifications"
         :notification-limit-options="notificationLimitOptions"
+        :suppressed-open="suppressedOpen"
+        :suppressed-items="suppressedItems"
+        :suppressed-loading="suppressedLoading"
         @acknowledge="handleAcknowledgeNotification"
         @acknowledge-all="handleAcknowledgeAllNotifications"
+        @open-suppressed="openSuppressed"
+        @close-suppressed="closeSuppressed"
+        @unsuppress="handleUnsuppress"
       />
     </section>
 
@@ -77,6 +85,8 @@
         v-model:watchlistQuery="watchlistQuery"
         v-model:watchlistDisplayLimit="watchlistDisplayLimit"
         v-model:bulkNames="bulkNames"
+        v-model:watchlistSortField="watchlistSortField"
+        v-model:watchlistSortDirection="watchlistSortDirection"
         :displayed-watchlist="displayedWatchlist"
         :filtered-count="filteredWatchlist.length"
         :bulk-result="bulkResult"
@@ -85,15 +95,33 @@
         :watchlist-limit-options="watchlistLimitOptions"
         @remove="handleRemoveFromWatchlist"
         @bulk-add="addBulkToWatchlist"
+        @details="handleOpenDetails"
       />
       <PositionsCard
         v-model:positionDisplayLimit="positionDisplayLimit"
+        v-model:sellPrices="sellPrices"
+        v-model:buyPrices="buyPrices"
+        v-model:manualName="manualName"
         :displayed-positions="displayedPositions"
-        :positions-count="positions.length"
+        :positions-count="openPositions.length"
         :position-limit-options="positionLimitOptions"
+        :manual-match="manualMatch"
+        :manual-match-loading="manualMatchLoading"
         @remove="handleRemovePosition"
+        @sell="handleSellPosition"
+        @market="handleMarketPrice"
+        @update-buy="handleUpdateBuyPrice"
+        @manual-add="handleManualPosition"
       />
     </section>
+
+    <ItemDetailsModal
+      :open="detailsOpen"
+      :loading="detailsLoading"
+      :error="detailsError"
+      :item="detailsItem"
+      @close="closeDetails"
+    />
   </div>
 </template>
 
@@ -106,6 +134,7 @@ import NotificationsCard from '../components/NotificationsCard.vue';
 import WatchlistCard from '../components/WatchlistCard.vue';
 import PositionsCard from '../components/PositionsCard.vue';
 import ToastBar from '../components/ToastBar.vue';
+import ItemDetailsModal from '../components/ItemDetailsModal.vue';
 import { useConfig } from '../composables/useConfig';
 import { useLocalSettings } from '../composables/useLocalSettings';
 import { useCatalogStatus } from '../composables/useCatalogStatus';
@@ -115,12 +144,36 @@ import { useAlerts } from '../composables/useAlerts';
 import { useNotifications } from '../composables/useNotifications';
 import { usePositions } from '../composables/usePositions';
 import { useToasts } from '../composables/useToasts';
-import { sendDiscordTest } from '../api';
+import {
+  sendDiscordTest,
+  sellPosition,
+  updateBuyPrice,
+  getLatestPrice,
+  addManualPosition,
+  searchItems,
+  getSuppressedNotifications,
+  removeSuppressedNotification,
+  getItemDetails
+} from '../api';
 
 const settingsOpen = ref(false);
 const refreshError = ref('');
 const lastUpdated = ref('');
 let refreshTimer = null;
+const sellPrices = ref({});
+const buyPrices = ref({});
+const manualName = ref('');
+const manualMatch = ref('');
+const manualMatchLoading = ref(false);
+let manualMatchToken = 0;
+let manualMatchTimer = null;
+const suppressedOpen = ref(false);
+const suppressedLoading = ref(false);
+const suppressedItems = ref([]);
+const detailsOpen = ref(false);
+const detailsLoading = ref(false);
+const detailsError = ref('');
+const detailsItem = ref(null);
 
 const { toasts, pushToast, removeToast } = useToasts();
 
@@ -137,7 +190,8 @@ const {
   userAgent,
   isUserAgentValid,
   loadConfig,
-  saveConfig
+  saveConfig,
+  alertGraceMinutes
 } = useConfig();
 
 const {
@@ -174,6 +228,8 @@ const {
   bulkResult,
   bulkError,
   bulkLoading,
+  watchlistSortField,
+  watchlistSortDirection,
   loadWatchlist,
   addToWatchlist,
   removeFromWatchlist,
@@ -190,7 +246,7 @@ const {
   removeNotificationItem
 } = useNotifications(notificationDisplayLimit);
 
-const { positions, displayedPositions, loadPositions, removePositionItem } = usePositions(
+const { openPositions, displayedPositions, loadPositions, removePositionItem } = usePositions(
   positionDisplayLimit
 );
 
@@ -293,6 +349,111 @@ const handleRemovePosition = async (positionId) => {
   }
 };
 
+const handleSellPosition = async ({ id, price }) => {
+  try {
+    await sellPosition(id, price);
+    await loadPositions();
+    pushToast('Position sold and P&L recorded.', 'success');
+  } catch (error) {
+    reportRefreshError(error, 'Failed to sell position.');
+    pushToast('Failed to sell position.', 'error');
+  }
+};
+
+const handleMarketPrice = async (id) => {
+  try {
+    const latest = await getLatestPrice(id);
+    if (latest?.price) {
+      sellPrices.value[id] = Math.round(latest.price);
+    }
+  } catch (error) {
+    reportRefreshError(error, 'Failed to load latest price.');
+    pushToast('Failed to load latest price.', 'error');
+  }
+};
+
+const handleUpdateBuyPrice = async ({ id, price }) => {
+  try {
+    await updateBuyPrice(id, price);
+    await loadPositions();
+    pushToast('Buy price updated.', 'success');
+  } catch (error) {
+    reportRefreshError(error, 'Failed to update buy price.');
+    pushToast('Failed to update buy price.', 'error');
+  }
+};
+
+const handleManualMatch = (name) => {
+  if (manualMatchTimer) {
+    clearTimeout(manualMatchTimer);
+    manualMatchTimer = null;
+  }
+
+  const trimmed = name.trim();
+  if (!trimmed) {
+    manualMatch.value = '';
+    manualMatchLoading.value = false;
+    return;
+  }
+
+  manualMatchLoading.value = true;
+  const token = (manualMatchToken += 1);
+  manualMatchTimer = setTimeout(async () => {
+    try {
+      const results = await searchItems(trimmed);
+      if (token !== manualMatchToken) {
+        return;
+      }
+      const query = trimmed.toLowerCase();
+      const exact = results?.find((item) => item.name.toLowerCase() === query);
+      const starts = results?.find((item) => item.name.toLowerCase().startsWith(query));
+      manualMatch.value = exact?.name ?? starts?.name ?? results?.[0]?.name ?? '';
+    } catch (error) {
+      if (token !== manualMatchToken) {
+        return;
+      }
+      manualMatch.value = '';
+    } finally {
+      if (token === manualMatchToken) {
+        manualMatchLoading.value = false;
+      }
+    }
+  }, 350);
+};
+
+const handleManualPosition = async ({ name, quantity, buyPrice }) => {
+  try {
+    const position = await addManualPosition({
+      itemName: name,
+      quantity,
+      buyPrice
+    });
+    await loadPositions();
+    pushToast(`Manual position added for ${position.itemName}.`, 'success');
+  } catch (error) {
+    reportRefreshError(error, 'Failed to add manual position.');
+    pushToast('Failed to add manual position.', 'error');
+  }
+};
+
+const handleOpenDetails = async (itemId) => {
+  detailsOpen.value = true;
+  detailsLoading.value = true;
+  detailsError.value = '';
+  detailsItem.value = null;
+  try {
+    detailsItem.value = await getItemDetails(itemId);
+  } catch (error) {
+    detailsError.value = error.message || 'Failed to load item details.';
+  } finally {
+    detailsLoading.value = false;
+  }
+};
+
+const closeDetails = () => {
+  detailsOpen.value = false;
+};
+
 const handleAcknowledgeNotification = async (notificationId) => {
   try {
     await removeNotificationItem(notificationId);
@@ -306,6 +467,35 @@ const handleAcknowledgeAllNotifications = async () => {
     await clearAllNotifications();
   } catch (error) {
     reportRefreshError(error, 'Failed to acknowledge notifications.');
+  }
+};
+
+const loadSuppressed = async () => {
+  suppressedLoading.value = true;
+  try {
+    suppressedItems.value = await getSuppressedNotifications();
+  } catch (error) {
+    reportRefreshError(error, 'Failed to load suppressed items.');
+  } finally {
+    suppressedLoading.value = false;
+  }
+};
+
+const openSuppressed = async () => {
+  suppressedOpen.value = true;
+  await loadSuppressed();
+};
+
+const closeSuppressed = () => {
+  suppressedOpen.value = false;
+};
+
+const handleUnsuppress = async (itemId) => {
+  try {
+    await removeSuppressedNotification(itemId);
+    await loadSuppressed();
+  } catch (error) {
+    reportRefreshError(error, 'Failed to remove suppression.');
   }
 };
 
@@ -350,5 +540,9 @@ watch([searchResults, searchPageSize], () => {
   if (searchPage.value > searchTotalPages.value) {
     searchPage.value = searchTotalPages.value;
   }
+});
+
+watch(manualName, (value) => {
+  handleManualMatch(value ?? '');
 });
 </script>

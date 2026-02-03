@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using OSRSGeMonitor.Api.Models;
+using OSRSGeMonitor.Api.Models.Responses;
 using OSRSGeMonitor.Api.Services;
 
 namespace OSRSGeMonitor.Api.Controllers;
@@ -103,6 +104,39 @@ public class WatchlistController : ControllerBase
     public IActionResult RemoveItem(int id)
     {
         return _dataStore.RemoveItem(id) ? NoContent() : NotFound();
+    }
+
+    [HttpGet("market")]
+    public async Task<ActionResult<IReadOnlyCollection<WatchlistMarketDto>>> GetMarketLatest(
+        CancellationToken cancellationToken)
+    {
+        var items = _dataStore.GetItems().ToArray();
+        var ids = items.Select(item => item.Id).ToArray();
+        var snapshots = _dataStore.GetLatestPrices(ids);
+        var catalog = new Dictionary<int, ItemCatalogService.ItemCatalogEntry>();
+        foreach (var item in items)
+        {
+            var match = await _catalogService.FindByIdAsync(item.Id, cancellationToken);
+            if (match is not null)
+            {
+                catalog[item.Id] = match;
+            }
+        }
+        var results = snapshots
+            .Select(snapshot =>
+            {
+                catalog.TryGetValue(snapshot.ItemId, out var entry);
+                return new WatchlistMarketDto(
+                    snapshot.ItemId,
+                    snapshot.High,
+                    snapshot.Low,
+                    snapshot.HighTime,
+                    snapshot.LowTime,
+                    entry?.Limit);
+            })
+            .OrderBy(entry => entry.ItemId)
+            .ToArray();
+        return Ok(results);
     }
 
     public sealed class AddToWatchlistRequest

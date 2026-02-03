@@ -30,14 +30,15 @@ public class AlertsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/acknowledge")]
-    public IActionResult Acknowledge(Guid id, AcknowledgeAlertRequest request)
+    public async Task<IActionResult> Acknowledge(Guid id, AcknowledgeAlertRequest request, CancellationToken cancellationToken)
     {
         if (request.Quantity <= 0)
         {
             return BadRequest("Quantity must be greater than zero.");
         }
 
-        return _dataStore.AcknowledgeAlert(id, request.Quantity, out _) ? NoContent() : NotFound();
+        var position = await _dataStore.AcknowledgeAlertAsync(id, request.Quantity, cancellationToken);
+        return position is null ? NotFound() : NoContent();
     }
 
     [HttpDelete("{id:guid}")]
@@ -46,8 +47,5 @@ public class AlertsController : ControllerBase
         return _dataStore.RemoveAlert(id) ? NoContent() : NotFound();
     }
 
-    public sealed class AcknowledgeAlertRequest
-    {
-        public int Quantity { get; set; }
-    }
+    public sealed record AcknowledgeAlertRequest(int Quantity);
 }

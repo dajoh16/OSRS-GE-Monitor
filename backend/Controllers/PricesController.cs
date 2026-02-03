@@ -63,6 +63,21 @@ public class PricesController : ControllerBase
         return Ok(filtered);
     }
 
+    [HttpGet("{itemId:int}/latest")]
+    public async Task<ActionResult<PriceHistoryPoint>> GetLatest(
+        int itemId,
+        CancellationToken cancellationToken)
+    {
+        var history = await _timeSeriesService.GetTimeSeriesAsync(itemId, TimeSeriesTimestep.FiveMinutes, cancellationToken);
+        var latest = history.OrderBy(point => point.Timestamp).LastOrDefault();
+        if (latest is null)
+        {
+            return NotFound();
+        }
+
+        return Ok(new PriceHistoryPoint(latest.Timestamp, latest.Price));
+    }
+
     private static bool TryParseTimestamp(
         string? input,
         out DateTimeOffset? value,

@@ -18,6 +18,7 @@ builder.Services.AddCors(options =>
 builder.Services.AddSingleton<SqliteWatchlistStore>();
 builder.Services.AddSingleton<SqliteTimeSeriesCacheStore>();
 builder.Services.AddSingleton<SqliteConfigStore>();
+builder.Services.AddSingleton<SqlitePositionStore>();
 builder.Services.AddSingleton<InMemoryDataStore>();
 builder.Services.AddSingleton<ItemCatalogService>();
 builder.Services.AddSingleton<OsrsTimeSeriesService>();
@@ -38,7 +39,10 @@ app.UseCors("DevCors");
 app.MapControllers();
 
 await app.Services.GetRequiredService<SqliteConfigStore>().InitializeAsync();
-await app.Services.GetRequiredService<InMemoryDataStore>().LoadConfigAsync();
+await app.Services.GetRequiredService<SqlitePositionStore>().InitializeAsync();
+var dataStore = app.Services.GetRequiredService<InMemoryDataStore>();
+await dataStore.LoadConfigAsync();
+await dataStore.LoadPositionsAsync();
 
 await app.RunAsync();
 
