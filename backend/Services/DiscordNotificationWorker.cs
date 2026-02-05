@@ -143,6 +143,14 @@ public sealed class DiscordNotificationWorker : BackgroundService
                 CultureInfo.InvariantCulture,
                 "[TEST] {0}",
                 notification.Message ?? "Discord alerts are configured correctly."),
+            DiscordNotificationType.Report => string.Format(
+                CultureInfo.InvariantCulture,
+                "📊 Watchlist Report: {0}\nHigh: {1:N0} gp\nLow: {2:N0} gp\nSpread: {3:N0} gp\nAfter-tax P/L: {4:N0} gp",
+                notification.ItemName,
+                notification.ReportHigh ?? 0,
+                notification.ReportLow ?? 0,
+                notification.ReportSpread ?? 0,
+                notification.ReportAfterTax ?? 0),
             _ => notification.ItemName
         };
     }

@@ -384,9 +384,14 @@ public class InMemoryDataStore
         return true;
     }
 
-    public async Task<Position?> SellPositionAsync(Guid id, double sellPrice, CancellationToken cancellationToken = default)
+    public async Task<Position?> SellPositionAsync(
+        Guid id,
+        double sellPrice,
+        int sellQuantity,
+        CancellationToken cancellationToken = default)
     {
         Position? position;
+        Position? soldPosition = null;
         lock (_lock)
         {
             position = _positions.FirstOrDefault(entry => entry.Id == id);
@@ -395,21 +400,68 @@ public class InMemoryDataStore
                 return null;
             }
 
-            var taxPerItem = CalculateTaxPerItem(sellPrice);
-            var taxPaid = taxPerItem * position.Quantity;
-            var gross = sellPrice * position.Quantity;
-            var cost = position.BuyPrice * position.Quantity;
-            var profit = gross - cost - taxPaid;
+            if (sellQuantity <= 0 || sellQuantity > position.Quantity)
+            {
+                return null;
+            }
 
-            position.SellPrice = sellPrice;
-            position.SoldAt = DateTimeOffset.UtcNow;
-            position.TaxRateApplied = 0.02;
-            position.TaxPaid = taxPaid;
-            position.Profit = profit;
+            if (sellQuantity == position.Quantity)
+            {
+                var taxPerItem = CalculateTaxPerItem(sellPrice);
+                var taxPaid = taxPerItem * position.Quantity;
+                var gross = sellPrice * position.Quantity;
+                var cost = position.BuyPrice * position.Quantity;
+                var profit = gross - cost - taxPaid;
+
+                position.SellPrice = sellPrice;
+                position.SoldAt = DateTimeOffset.UtcNow;
+                position.TaxRateApplied = 0.02;
+                position.TaxPaid = taxPaid;
+                position.Profit = profit;
+                soldPosition = position;
+            }
+            else
+            {
+                var taxPerItem = CalculateTaxPerItem(sellPrice);
+                var taxPaid = taxPerItem * sellQuantity;
+                var gross = sellPrice * sellQuantity;
+                var cost = position.BuyPrice * sellQuantity;
+                var profit = gross - cost - taxPaid;
+
+                soldPosition = new Position
+                {
+                    ItemId = position.ItemId,
+                    ItemName = position.ItemName,
+                    Quantity = sellQuantity,
+                    BuyPrice = position.BuyPrice,
+                    BoughtAt = position.BoughtAt,
+                    AcknowledgedAt = position.AcknowledgedAt,
+                    RecoveredAt = position.RecoveredAt,
+                    RecoveryPrice = position.RecoveryPrice,
+                    SellPrice = sellPrice,
+                    SoldAt = DateTimeOffset.UtcNow,
+                    TaxRateApplied = 0.02,
+                    TaxPaid = taxPaid,
+                    Profit = profit
+                };
+
+                position.Quantity -= sellQuantity;
+                _positions.Add(soldPosition);
+            }
         }
 
-        await _positionStore.UpsertAsync(position, cancellationToken);
-        return position;
+        if (soldPosition is null)
+        {
+            return null;
+        }
+
+        await _positionStore.UpsertAsync(soldPosition, cancellationToken);
+        if (!ReferenceEquals(soldPosition, position))
+        {
+            await _positionStore.UpsertAsync(position!, cancellationToken);
+        }
+
+        return soldPosition;
     }
 
     public async Task<Position?> UpdateBuyPriceAsync(Guid id, double buyPrice, CancellationToken cancellationToken = default)
@@ -434,6 +486,38 @@ public class InMemoryDataStore
                 var cost = position.BuyPrice * position.Quantity;
                 position.Profit = gross - cost - taxPaid;
             }
+        }
+
+        await _positionStore.UpsertAsync(position, cancellationToken);
+        return position;
+    }
+
+    public async Task<Position?> IncreasePositionQuantityAsync(
+        Guid id,
+        int quantity,
+        double buyPrice,
+        CancellationToken cancellationToken = default)
+    {
+        Position? position;
+        lock (_lock)
+        {
+            position = _positions.FirstOrDefault(entry => entry.Id == id);
+            if (position is null || position.SoldAt.HasValue)
+            {
+                return null;
+            }
+
+            if (quantity <= 0)
+            {
+                return null;
+            }
+
+            if (position.BuyPrice != buyPrice)
+            {
+                return null;
+            }
+
+            position.Quantity += quantity;
         }
 
         await _positionStore.UpsertAsync(position, cancellationToken);
@@ -568,6 +652,10 @@ public class InMemoryDataStore
             {
                 _suppressedDropItems.Add(notification.ItemId);
             }
+            else if (IsRecoveryNotification(notification))
+            {
+                _suppressedDropItems.Remove(notification.ItemId);
+            }
 
             _notifications.RemoveAt(index);
             return true;
@@ -616,5 +704,10 @@ public class InMemoryDataStore
     private static bool IsDropNotification(Notification notification)
     {
         return notification.ItemId > 0 && string.Equals(notification.Type, "drop", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsRecoveryNotification(Notification notification)
+    {
+        return notification.ItemId > 0 && string.Equals(notification.Type, "recovery", StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("OSRSGeMonitor.Api")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+8e3e21170f49efff1ce87e90934fff3000c1e2ac")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+4e2cc8958b28696f1a858de5786ccd8cf3c4672c")]
 [assembly: System.Reflection.AssemblyProductAttribute("OSRSGeMonitor.Api")]
 [assembly: System.Reflection.AssemblyTitleAttribute("OSRSGeMonitor.Api")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

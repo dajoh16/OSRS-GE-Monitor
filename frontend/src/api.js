@@ -66,6 +66,11 @@ export const removeWatchlistItem = (itemId) =>
     method: 'DELETE'
   });
 
+export const sendWatchlistDiscordReport = (itemId) =>
+  request(`/api/watchlist/${itemId}/discord-report`, {
+    method: 'POST'
+  });
+
 export const getAlerts = () => request('/api/alerts');
 
 export const acknowledgeAlert = (alertId, quantity) =>
@@ -87,16 +92,22 @@ export const addManualPosition = (payload) =>
     body: JSON.stringify(payload)
   });
 
-export const sellPosition = (positionId, sellPrice) =>
+export const sellPosition = (positionId, sellPrice, quantity) =>
   request(`/api/positions/${positionId}/sell`, {
     method: 'POST',
-    body: JSON.stringify({ sellPrice })
+    body: JSON.stringify({ sellPrice, quantity })
   });
 
 export const updateBuyPrice = (positionId, buyPrice) =>
   request(`/api/positions/${positionId}/buy-price`, {
     method: 'POST',
     body: JSON.stringify({ buyPrice })
+  });
+
+export const increasePositionQuantity = (positionId, buyPrice, quantity) =>
+  request(`/api/positions/${positionId}/increase`, {
+    method: 'POST',
+    body: JSON.stringify({ buyPrice, quantity })
   });
 
 export const getPositionSummary = () => request('/api/positions/summary');

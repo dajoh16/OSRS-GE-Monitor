@@ -93,14 +93,20 @@
         :bulk-error="bulkError"
         :bulk-loading="bulkLoading"
         :watchlist-limit-options="watchlistLimitOptions"
+        :discord-notifications-enabled="discordNotificationsEnabled"
+        :discord-webhook-valid="isDiscordWebhookValid"
+        :report-loading-by-id="discordReportLoading"
         @remove="handleRemoveFromWatchlist"
         @bulk-add="addBulkToWatchlist"
         @details="handleOpenDetails"
+        @discord-report="handleSendWatchlistReport"
       />
       <PositionsCard
         v-model:positionDisplayLimit="positionDisplayLimit"
         v-model:sellPrices="sellPrices"
+        v-model:sellQuantities="sellQuantities"
         v-model:buyPrices="buyPrices"
+        v-model:addQuantities="addQuantities"
         v-model:manualName="manualName"
         :displayed-positions="displayedPositions"
         :positions-count="openPositions.length"
@@ -109,8 +115,7 @@
         :manual-match-loading="manualMatchLoading"
         @remove="handleRemovePosition"
         @sell="handleSellPosition"
-        @market="handleMarketPrice"
-        @update-buy="handleUpdateBuyPrice"
+        @update-position="handleUpdatePosition"
         @manual-add="handleManualPosition"
       />
     </section>
@@ -146,9 +151,10 @@ import { usePositions } from '../composables/usePositions';
 import { useToasts } from '../composables/useToasts';
 import {
   sendDiscordTest,
+  sendWatchlistDiscordReport,
+  increasePositionQuantity,
   sellPosition,
   updateBuyPrice,
-  getLatestPrice,
   addManualPosition,
   searchItems,
   getSuppressedNotifications,
@@ -161,7 +167,9 @@ const refreshError = ref('');
 const lastUpdated = ref('');
 let refreshTimer = null;
 const sellPrices = ref({});
+const sellQuantities = ref({});
 const buyPrices = ref({});
+const addQuantities = ref({});
 const manualName = ref('');
 const manualMatch = ref('');
 const manualMatchLoading = ref(false);
@@ -174,6 +182,7 @@ const detailsOpen = ref(false);
 const detailsLoading = ref(false);
 const detailsError = ref('');
 const detailsItem = ref(null);
+const discordReportLoading = ref({});
 
 const { toasts, pushToast, removeToast } = useToasts();
 
@@ -189,6 +198,7 @@ const {
   fetchInterval,
   userAgent,
   isUserAgentValid,
+  isDiscordWebhookValid,
   loadConfig,
   saveConfig,
   alertGraceMinutes
@@ -349,9 +359,9 @@ const handleRemovePosition = async (positionId) => {
   }
 };
 
-const handleSellPosition = async ({ id, price }) => {
+const handleSellPosition = async ({ id, price, quantity }) => {
   try {
-    await sellPosition(id, price);
+    await sellPosition(id, price, quantity);
     await loadPositions();
     pushToast('Position sold and P&L recorded.', 'success');
   } catch (error) {
@@ -360,26 +370,35 @@ const handleSellPosition = async ({ id, price }) => {
   }
 };
 
-const handleMarketPrice = async (id) => {
+const handleUpdatePosition = async ({ id, buyPrice, addQuantity, currentBuyPrice }) => {
+  const hasBuyPrice = Number.isFinite(buyPrice) && buyPrice > 0;
+  const hasAddQuantity = Number.isInteger(addQuantity) && addQuantity > 0;
+
+  if (!hasBuyPrice && !hasAddQuantity) {
+    return;
+  }
+
   try {
-    const latest = await getLatestPrice(id);
-    if (latest?.price) {
-      sellPrices.value[id] = Math.round(latest.price);
+    if (hasBuyPrice) {
+      await updateBuyPrice(id, buyPrice);
+    }
+
+    if (hasAddQuantity) {
+      const effectivePrice = hasBuyPrice ? buyPrice : currentBuyPrice;
+      await increasePositionQuantity(id, effectivePrice, addQuantity);
+    }
+
+    await loadPositions();
+    if (hasBuyPrice && hasAddQuantity) {
+      pushToast('Buy price updated and quantity increased.', 'success');
+    } else if (hasBuyPrice) {
+      pushToast('Buy price updated.', 'success');
+    } else {
+      pushToast('Position quantity increased.', 'success');
     }
   } catch (error) {
-    reportRefreshError(error, 'Failed to load latest price.');
-    pushToast('Failed to load latest price.', 'error');
-  }
-};
-
-const handleUpdateBuyPrice = async ({ id, price }) => {
-  try {
-    await updateBuyPrice(id, price);
-    await loadPositions();
-    pushToast('Buy price updated.', 'success');
-  } catch (error) {
-    reportRefreshError(error, 'Failed to update buy price.');
-    pushToast('Failed to update buy price.', 'error');
+    reportRefreshError(error, 'Failed to update position.');
+    pushToast('Failed to update position.', 'error');
   }
 };
 
@@ -457,6 +476,9 @@ const closeDetails = () => {
 const handleAcknowledgeNotification = async (notificationId) => {
   try {
     await removeNotificationItem(notificationId);
+    if (suppressedOpen.value) {
+      await loadSuppressed();
+    }
   } catch (error) {
     reportRefreshError(error, 'Failed to acknowledge notification.');
   }
@@ -465,6 +487,9 @@ const handleAcknowledgeNotification = async (notificationId) => {
 const handleAcknowledgeAllNotifications = async () => {
   try {
     await clearAllNotifications();
+    if (suppressedOpen.value) {
+      await loadSuppressed();
+    }
   } catch (error) {
     reportRefreshError(error, 'Failed to acknowledge notifications.');
   }
@@ -515,6 +540,38 @@ const handleSendDiscordTest = async () => {
   } catch (error) {
     reportRefreshError(error, 'Failed to send Discord test alert.');
     pushToast('Failed to send Discord test alert.', 'error');
+  }
+};
+
+const setReportLoading = (itemId, isLoading) => {
+  const next = { ...discordReportLoading.value };
+  if (isLoading) {
+    next[itemId] = true;
+  } else {
+    delete next[itemId];
+  }
+  discordReportLoading.value = next;
+};
+
+const handleSendWatchlistReport = async (itemId) => {
+  if (!discordNotificationsEnabled.value || !isDiscordWebhookValid.value) {
+    pushToast('Configure Discord notifications in settings first.', 'error');
+    return;
+  }
+
+  if (discordReportLoading.value[itemId]) {
+    return;
+  }
+
+  setReportLoading(itemId, true);
+  try {
+    await sendWatchlistDiscordReport(itemId);
+    pushToast(`Reported ${resolveItemName(itemId)} to Discord.`, 'success');
+  } catch (error) {
+    reportRefreshError(error, 'Failed to send Discord report.');
+    pushToast('Failed to send Discord report.', 'error');
+  } finally {
+    setReportLoading(itemId, false);
   }
 };
 

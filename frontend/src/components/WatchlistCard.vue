@@ -59,6 +59,13 @@
             </span>
           </div>
           <div class="watchlist-row__actions">
+            <button
+              class="secondary action-button"
+              :disabled="isReportDisabled(item)"
+              @click="$emit('discord-report', item.id)"
+            >
+              {{ isReporting(item.id) ? 'Reporting...' : 'Report' }}
+            </button>
             <button class="secondary action-button" @click="$emit('details', item.id)">
               Details
             </button>
@@ -103,16 +110,19 @@
 </template>
 
 <script setup>
-defineProps({
+const props = defineProps({
   displayedWatchlist: Array,
   filteredCount: Number,
   bulkResult: Object,
   bulkError: String,
   bulkLoading: Boolean,
-  watchlistLimitOptions: Array
+  watchlistLimitOptions: Array,
+  discordNotificationsEnabled: Boolean,
+  discordWebhookValid: Boolean,
+  reportLoadingById: Object
 });
 
-defineEmits(['remove', 'bulk-add', 'details']);
+defineEmits(['remove', 'bulk-add', 'details', 'discord-report']);
 
 const watchlistQuery = defineModel('watchlistQuery');
 const watchlistDisplayLimit = defineModel('watchlistDisplayLimit');
@@ -145,4 +155,14 @@ const afterTaxProfit = (item) => {
 const toggleSortDirection = () => {
   watchlistSortDirection.value = watchlistSortDirection.value === 'asc' ? 'desc' : 'asc';
 };
+
+const hasMarketData = (item) => item.marketHigh != null && item.marketLow != null;
+
+const isReporting = (itemId) => props.reportLoadingById?.[itemId];
+
+const isReportDisabled = (item) =>
+  !props.discordNotificationsEnabled ||
+  !props.discordWebhookValid ||
+  !hasMarketData(item) ||
+  isReporting(item.id);
 </script>

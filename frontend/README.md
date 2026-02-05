@@ -26,7 +26,8 @@ VITE_API_BASE_URL=http://localhost:8080 npm run dev
 ```
 
 ```powershell
-$env:VITE_API_BASE_URL = "http://localhost:8080"
+set-executionpolicy remotesigned
+$env:VITE_API_BASE_URL = "http://localhost:5000"
 npm run dev
 ```
 

@@ -42,15 +42,26 @@
               min="1"
               placeholder="Sell price"
             />
+            <input
+              v-model.number="sellQuantities[position.id]"
+              type="number"
+              min="1"
+              :max="position.quantity"
+              placeholder="Sell qty"
+            />
             <button
               class="primary action-button"
-              :disabled="!sellPrices[position.id]"
-              @click="emitSell(position.id)"
+              :disabled="!canSellAll(position.id)"
+              @click="emitSellAll(position.id)"
             >
-              Sell
+              Sell All
             </button>
-            <button class="secondary action-button" type="button" @click="emitMarket(position.id)">
-              Market
+            <button
+              class="primary action-button"
+              :disabled="!canSellQuantity(position.id, position.quantity)"
+              @click="emitSellQuantity(position.id, position.quantity)"
+            >
+              Sell Qty
             </button>
           </div>
           <div class="sell-controls">
@@ -60,10 +71,17 @@
               min="1"
               placeholder="Edit buy"
             />
+            <input
+              v-model.number="addQuantities[position.id]"
+              type="number"
+              min="1"
+              step="1"
+              placeholder="Add qty"
+            />
             <button
               class="secondary action-button"
-              :disabled="!buyPrices[position.id]"
-              @click="emitBuyUpdate(position.id)"
+              :disabled="!canUpdatePosition(position.id)"
+              @click="emitPositionUpdate(position.id, position.buyPrice)"
             >
               Update
             </button>
@@ -116,11 +134,13 @@ defineProps({
   manualMatchLoading: Boolean
 });
 
-const emit = defineEmits(['remove', 'sell', 'market', 'update-buy', 'manual-add']);
+const emit = defineEmits(['remove', 'sell', 'update-position', 'manual-add']);
 
 const positionDisplayLimit = defineModel('positionDisplayLimit');
 const sellPrices = defineModel('sellPrices');
+const sellQuantities = defineModel('sellQuantities');
 const buyPrices = defineModel('buyPrices');
+const addQuantities = defineModel('addQuantities');
 const manualName = defineModel('manualName');
 const manualQuantity = ref(1);
 const manualBuyPrice = ref(null);
@@ -128,26 +148,72 @@ const manualBuyPrice = ref(null);
 const canSubmitManual = computed(() => {
   return manualName.value.trim().length > 0 && Number(manualQuantity.value) > 0 && Number(manualBuyPrice.value) > 0;
 });
-const emitSell = (id) => {
-  const price = Number(sellPrices.value[id]);
-  if (!Number.isFinite(price) || price <= 0) {
+const getSellPrice = (id) => Number(sellPrices.value[id]);
+const getSellQuantity = (id) => Number(sellQuantities.value[id]);
+
+const canSellAll = (id) => {
+  const price = getSellPrice(id);
+  return Number.isFinite(price) && price > 0;
+};
+
+const canSellQuantity = (id, maxQuantity) => {
+  const price = getSellPrice(id);
+  const quantity = getSellQuantity(id);
+  return (
+    Number.isFinite(price) &&
+    price > 0 &&
+    Number.isInteger(quantity) &&
+    quantity > 0 &&
+    quantity <= maxQuantity
+  );
+};
+
+const emitSellAll = (id) => {
+  if (!canSellAll(id)) {
     return;
   }
-  emit('sell', { id, price });
+  const price = getSellPrice(id);
+  emit('sell', { id, price, quantity: null });
   sellPrices.value[id] = null;
+  sellQuantities.value[id] = null;
 };
 
-const emitMarket = (id) => {
-  emit('market', id);
-};
-
-const emitBuyUpdate = (id) => {
-  const price = Number(buyPrices.value[id]);
-  if (!Number.isFinite(price) || price <= 0) {
+const emitSellQuantity = (id, maxQuantity) => {
+  if (!canSellQuantity(id, maxQuantity)) {
     return;
   }
-  emit('update-buy', { id, price });
+  const price = getSellPrice(id);
+  const quantity = getSellQuantity(id);
+  emit('sell', { id, price, quantity });
+  sellPrices.value[id] = null;
+  sellQuantities.value[id] = null;
+};
+
+const getBuyPriceUpdate = (id) => Number(buyPrices.value[id]);
+const getAddQuantity = (id) => Number(addQuantities.value[id]);
+
+const canUpdatePosition = (id) => {
+  const price = getBuyPriceUpdate(id);
+  const addQuantity = getAddQuantity(id);
+  const hasPrice = Number.isFinite(price) && price > 0;
+  const hasQuantity = Number.isInteger(addQuantity) && addQuantity > 0;
+  return hasPrice || hasQuantity;
+};
+
+const emitPositionUpdate = (id, currentBuyPrice) => {
+  if (!canUpdatePosition(id)) {
+    return;
+  }
+  const price = getBuyPriceUpdate(id);
+  const addQuantity = getAddQuantity(id);
+  emit('update-position', {
+    id,
+    buyPrice: Number.isFinite(price) && price > 0 ? price : null,
+    addQuantity: Number.isInteger(addQuantity) && addQuantity > 0 ? addQuantity : null,
+    currentBuyPrice
+  });
   buyPrices.value[id] = null;
+  addQuantities.value[id] = null;
 };
 
 const submitManual = () => {

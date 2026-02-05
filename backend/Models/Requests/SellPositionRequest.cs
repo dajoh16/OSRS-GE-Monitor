@@ -1,3 +1,3 @@
 namespace OSRSGeMonitor.Api.Models.Requests;
 
-public sealed record SellPositionRequest(double SellPrice);
+public sealed record SellPositionRequest(double SellPrice, int? Quantity);

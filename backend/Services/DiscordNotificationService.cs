@@ -52,4 +52,28 @@ public sealed class DiscordNotificationService
             message);
         return _queue.EnqueueAsync(notification, cancellationToken);
     }
+
+    public ValueTask EnqueueReportAsync(
+        string itemName,
+        double high,
+        double low,
+        double spread,
+        double afterTax,
+        CancellationToken cancellationToken = default)
+    {
+        var notification = new DiscordNotification(
+            DiscordNotificationType.Report,
+            itemName,
+            0,
+            0,
+            0,
+            null,
+            DateTimeOffset.UtcNow,
+            null,
+            high,
+            low,
+            spread,
+            afterTax);
+        return _queue.EnqueueAsync(notification, cancellationToken);
+    }
 }

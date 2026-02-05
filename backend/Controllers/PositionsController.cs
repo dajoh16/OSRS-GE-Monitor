@@ -117,7 +117,29 @@ public class PositionsController : ControllerBase
             return BadRequest("Sell price must be greater than zero.");
         }
 
-        var position = await _dataStore.SellPositionAsync(id, request.SellPrice, cancellationToken);
+        if (request.Quantity.HasValue && request.Quantity.Value <= 0)
+        {
+            return BadRequest("Sell quantity must be greater than zero.");
+        }
+
+        var existing = _dataStore.GetPosition(id);
+        if (existing is null || existing.SoldAt.HasValue)
+        {
+            return NotFound();
+        }
+
+        var sellQuantity = request.Quantity ?? existing.Quantity;
+        if (sellQuantity <= 0)
+        {
+            return BadRequest("Sell quantity must be greater than zero.");
+        }
+
+        if (sellQuantity > existing.Quantity)
+        {
+            return BadRequest("Sell quantity cannot exceed current position quantity.");
+        }
+
+        var position = await _dataStore.SellPositionAsync(id, request.SellPrice, sellQuantity, cancellationToken);
         return position is null ? NotFound() : Ok(ToDto(position));
     }
 
@@ -133,6 +155,47 @@ public class PositionsController : ControllerBase
         }
 
         var position = await _dataStore.UpdateBuyPriceAsync(id, request.BuyPrice, cancellationToken);
+        return position is null ? NotFound() : Ok(ToDto(position));
+    }
+
+    [HttpPost("{id:guid}/increase")]
+    public async Task<ActionResult<PositionDto>> IncreaseQuantity(
+        Guid id,
+        IncreasePositionQuantityRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.Quantity <= 0)
+        {
+            return BadRequest("Quantity must be greater than zero.");
+        }
+
+        if (request.BuyPrice <= 0)
+        {
+            return BadRequest("Buy price must be greater than zero.");
+        }
+
+        var existing = _dataStore.GetPosition(id);
+        if (existing is null)
+        {
+            return NotFound();
+        }
+
+        if (existing.SoldAt.HasValue)
+        {
+            return BadRequest("Cannot increase quantity for a sold position.");
+        }
+
+        if (existing.BuyPrice != request.BuyPrice)
+        {
+            return BadRequest("Buy price must match the existing position buy price.");
+        }
+
+        var position = await _dataStore.IncreasePositionQuantityAsync(
+            id,
+            request.Quantity,
+            request.BuyPrice,
+            cancellationToken);
+
         return position is null ? NotFound() : Ok(ToDto(position));
     }
 

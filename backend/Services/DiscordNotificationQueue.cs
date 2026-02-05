@@ -10,13 +10,18 @@ public sealed record DiscordNotification(
     double StandardDeviation,
     double? RecoveryPrice,
     DateTimeOffset Timestamp,
-    string? Message);
+    string? Message,
+    double? ReportHigh = null,
+    double? ReportLow = null,
+    double? ReportSpread = null,
+    double? ReportAfterTax = null);
 
 public enum DiscordNotificationType
 {
     Drop,
     Recovery,
-    Test
+    Test,
+    Report
 }
 
 public sealed class DiscordNotificationQueue

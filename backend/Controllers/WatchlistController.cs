@@ -11,11 +11,16 @@ public class WatchlistController : ControllerBase
 {
     private readonly InMemoryDataStore _dataStore;
     private readonly ItemCatalogService _catalogService;
+    private readonly DiscordNotificationService _discordNotificationService;
 
-    public WatchlistController(InMemoryDataStore dataStore, ItemCatalogService catalogService)
+    public WatchlistController(
+        InMemoryDataStore dataStore,
+        ItemCatalogService catalogService,
+        DiscordNotificationService discordNotificationService)
     {
         _dataStore = dataStore;
         _catalogService = catalogService;
+        _discordNotificationService = discordNotificationService;
     }
 
     [HttpGet]
@@ -139,6 +144,44 @@ public class WatchlistController : ControllerBase
         return Ok(results);
     }
 
+    [HttpPost("{id:int}/discord-report")]
+    public async Task<IActionResult> SendDiscordReport(int id, CancellationToken cancellationToken)
+    {
+        var config = _dataStore.Config;
+        if (!config.DiscordNotificationsEnabled || string.IsNullOrWhiteSpace(config.DiscordWebhookUrl))
+        {
+            return BadRequest("Discord notifications are disabled or webhook URL is missing.");
+        }
+
+        var item = _dataStore.GetItem(id);
+        if (item is null)
+        {
+            return NotFound();
+        }
+
+        var snapshot = _dataStore.GetLatestPrice(id);
+        if (snapshot?.High is null || snapshot.Low is null)
+        {
+            return Conflict("Market data not available for this item yet.");
+        }
+
+        var high = snapshot.High.Value;
+        var low = snapshot.Low.Value;
+        var spread = high - low;
+        var tax = CalculateTaxPerItem(high);
+        var afterTax = high - low - tax;
+
+        await _discordNotificationService.EnqueueReportAsync(
+            item.Name,
+            high,
+            low,
+            spread,
+            afterTax,
+            cancellationToken);
+
+        return Accepted();
+    }
+
     public sealed class AddToWatchlistRequest
     {
         public int ItemId { get; set; }
@@ -156,4 +199,15 @@ public class WatchlistController : ControllerBase
         IReadOnlyCollection<string> NotFound,
         IReadOnlyCollection<string> Duplicates,
         IReadOnlyCollection<BulkMatchResult> Matched);
+
+    private static double CalculateTaxPerItem(double sellPrice)
+    {
+        if (sellPrice < 100)
+        {
+            return 0;
+        }
+
+        var tax = Math.Floor(sellPrice * 0.02);
+        return Math.Min(tax, 5_000_000);
+    }
 }
